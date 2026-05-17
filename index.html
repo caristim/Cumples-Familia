@@ -6,15 +6,13 @@
     <title>📅 Cumpleaños Familiares</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <!-- Carga de Firebase SDK clásico para compatibilidad directa -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <!-- OneSignal SDK -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 </head>
 <body class="bg-gray-100 font-sans min-h-screen">
 
-    <!-- PANTALLA DE LOGIN (PIN DE 4 DÍGITOS) -->
+    <!-- PANTALLA DE LOGIN -->
     <div id="login-screen" class="hidden fixed inset-0 bg-blue-900 flex items-center justify-center z-50 p-4">
         <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center">
             <span class="material-icons text-6xl text-blue-600 mb-2">lock</span>
@@ -28,7 +26,7 @@
 
     <!-- APLICACIÓN PRINCIPAL -->
     <div id="app-content" class="container mx-auto p-4 max-w-md pb-24">
-        
+
         <!-- Encabezado -->
         <header class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 rounded-2xl shadow-lg mb-6 text-center">
             <h1 class="text-2xl font-bold flex items-center justify-center gap-2">
@@ -37,56 +35,58 @@
             <p class="text-blue-100 text-xs mt-1">¡Nunca más te olvides de saludar!</p>
         </header>
 
-        <!-- PANEL DE HOY (OPCIÓN B) -->
-        <div id="panel-hoy" class="mb-6">
-            <!-- Se llena dinámicamente -->
-        </div>
+        <!-- PANEL DE HOY -->
+        <div id="panel-hoy" class="mb-6"></div>
 
-        <!-- LISTADO TOTAL DE CUMPLEAÑOS -->
+        <!-- LISTADO TOTAL -->
         <div class="bg-white rounded-2xl shadow-md p-4 mb-6">
             <h3 class="text-lg font-bold text-gray-800 mb-3 flex items-center gap-1">
                 <span class="material-icons text-indigo-500">star</span> Todos los Cumpleaños
             </h3>
-            <div id="lista-cumples" class="divide-y divide-gray-100 max-h-60 overflow-y-auto pr-1">
-                <!-- Se llena dinámicamente -->
-            </div>
+            <div id="lista-cumples" class="divide-y divide-gray-100 max-h-96 overflow-y-auto pr-1"></div>
         </div>
 
-        <!-- BOTÓN FLOTANTE PARA AGREGAR -->
+        <!-- BOTÓN AGREGAR -->
         <div class="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-full max-w-md px-4">
-            <button onclick="toggleFormulario()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl shadow-xl transition flex items-center justify-center gap-2">
+            <button onclick="abrirModalNuevo()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl shadow-xl transition flex items-center justify-center gap-2">
                 <span class="material-icons">add_circle</span> Agregar Cumpleaños
             </button>
         </div>
 
-        <!-- MODAL FORMULARIO -->
+        <!-- MODAL AGREGAR / EDITAR -->
         <div id="modal-form" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4">
             <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Nuevo Cumpleaños</h3>
+                <h3 id="modal-titulo" class="text-lg font-bold text-gray-800 mb-4">Nuevo Cumpleaños</h3>
                 <form id="cumple-form" class="space-y-4">
+                    <input type="hidden" id="edit-id">
                     <div>
                         <label class="block text-gray-600 text-sm font-medium mb-1">Nombre Completo</label>
                         <input type="text" id="nombre" required placeholder="Ej: Tía Marta" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                     </div>
-                    <div class="grid grid-cols-2 gap-2">
+                    <div class="grid grid-cols-3 gap-2">
                         <div>
                             <label class="block text-gray-600 text-sm font-medium mb-1">Día</label>
-                            <input type="number" id="dia" required min="1" max="31" placeholder="Ej: 15" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                            <input type="number" id="dia" required min="1" max="31" placeholder="15" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                         </div>
                         <div>
                             <label class="block text-gray-600 text-sm font-medium mb-1">Mes</label>
                             <select id="mes" required class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                                <option value="1">Enero</option><option value="2">Febrero</option>
-                                <option value="3">Marzo</option><option value="4">Abril</option>
-                                <option value="5">Mayo</option><option value="6">Junio</option>
-                                <option value="7">Julio</option><option value="8">Agosto</option>
-                                <option value="9">Septiembre</option><option value="10">Octubre</option>
-                                <option value="11">Noviembre</option><option value="12">Diciembre</option>
+                                <option value="1">Ene</option><option value="2">Feb</option>
+                                <option value="3">Mar</option><option value="4">Abr</option>
+                                <option value="5">May</option><option value="6">Jun</option>
+                                <option value="7">Jul</option><option value="8">Ago</option>
+                                <option value="9">Sep</option><option value="10">Oct</option>
+                                <option value="11">Nov</option><option value="12">Dic</option>
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-gray-600 text-sm font-medium mb-1">Año</label>
+                            <input type="number" id="anio" min="1900" max="2025" placeholder="1985" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
                     </div>
+                    <p class="text-xs text-gray-400">El año es opcional. Si lo agregás, se calculará la edad automáticamente.</p>
                     <div class="flex gap-2 pt-2">
-                        <button type="button" onclick="toggleFormulario()" class="w-1/2 border border-gray-300 text-gray-600 py-2.5 rounded-xl font-semibold">Cancelar</button>
+                        <button type="button" onclick="cerrarModal()" class="w-1/2 border border-gray-300 text-gray-600 py-2.5 rounded-xl font-semibold">Cancelar</button>
                         <button type="submit" class="w-1/2 bg-indigo-600 text-white py-2.5 rounded-xl font-semibold shadow">Guardar</button>
                     </div>
                 </form>
@@ -96,10 +96,8 @@
     </div>
 
     <script>
-        // CONFIGURACIÓN DE SEGURIDAD LOCAL
-        const PIN_CORRECTO = "1234"; // 👈 CAMBIA TU PIN AQUÍ
+        const PIN_CORRECTO = "1234";
 
-        // CONFIGURACIÓN DE TU FIREBASE
         const firebaseConfig = {
             apiKey: "AIzaSyAbQ6rToUzUgvhqFw5ynFpGQzI0pFDgb8I",
             authDomain: "cumples-familia.firebaseapp.com",
@@ -108,8 +106,7 @@
             messagingSenderId: "456266355172",
             appId: "1:456266355172:web:89059503a341bd8cc8f7f1"
         };
-        
-        // Inicializar Firebase
+
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database().ref('cumpleanos');
 
@@ -137,7 +134,7 @@
         });
         // ── FIN ONESIGNAL ──────────────────────────────────────────
 
-        // Manejo de Pantallas y Validación de PIN
+        // ── LOGIN ──────────────────────────────────────────────────
         function comprobarAcceso() {
             if (localStorage.getItem('access_granted') === 'true') {
                 document.getElementById('app-content').classList.remove('hidden');
@@ -155,23 +152,38 @@
                 document.getElementById('app-content').classList.remove('hidden');
                 inicializarApp();
             } else {
-                const error = document.getElementById('login-error');
-                error.classList.remove('hidden');
+                document.getElementById('login-error').classList.remove('hidden');
                 document.getElementById('pin-input').value = '';
             }
         }
 
-        function toggleFormulario() {
-            const modal = document.getElementById('modal-form');
-            modal.classList.toggle('hidden');
+        // ── MODAL ──────────────────────────────────────────────────
+        function abrirModalNuevo() {
+            document.getElementById('modal-titulo').textContent = 'Nuevo Cumpleaños';
+            document.getElementById('cumple-form').reset();
+            document.getElementById('edit-id').value = '';
+            document.getElementById('modal-form').classList.remove('hidden');
         }
 
-        // Inicializar lógicas core de la App
+        function abrirModalEditar(id, nombre, dia, mes, anio) {
+            document.getElementById('modal-titulo').textContent = 'Editar Cumpleaños';
+            document.getElementById('edit-id').value = id;
+            document.getElementById('nombre').value = nombre;
+            document.getElementById('dia').value = dia;
+            document.getElementById('mes').value = mes;
+            document.getElementById('anio').value = anio || '';
+            document.getElementById('modal-form').classList.remove('hidden');
+        }
+
+        function cerrarModal() {
+            document.getElementById('modal-form').classList.add('hidden');
+        }
+
+        // ── APP ────────────────────────────────────────────────────
         function inicializarApp() {
             escucharBaseDatos();
         }
 
-        // Escuchar cambios de Firebase en tiempo real
         function escucharBaseDatos() {
             db.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -183,22 +195,35 @@
             });
         }
 
+        function calcularEdad(dia, mes, anio) {
+            if (!anio) return null;
+            const hoy = new Date();
+            let edad = hoy.getFullYear() - anio;
+            // Si el cumpleaños de este año todavía no llegó, restar 1
+            const cumpEsteAnio = new Date(hoy.getFullYear(), mes - 1, dia);
+            if (hoy < cumpEsteAnio) edad--;
+            return edad;
+        }
+
         function renderizarComponentes(lista) {
             const hoy = new Date();
             const diaHoy = hoy.getDate();
             const mesHoy = hoy.getMonth() + 1;
 
-            // 1. Filtrar Cumpleaños de Hoy
-            const cumpleañerosHoy = lista.filter(c => parseInt(c.dia) === diaHoy && parseInt(c.mes) === mesHoy);
+            // Panel de hoy
+            const cumpleHoy = lista.filter(c => parseInt(c.dia) === diaHoy && parseInt(c.mes) === mesHoy);
             const panelHoy = document.getElementById('panel-hoy');
 
-            if (cumpleañerosHoy.length > 0) {
-                let nombres = cumpleañerosHoy.map(c => c.nombre).join(' y ');
+            if (cumpleHoy.length > 0) {
+                const nombresConEdad = cumpleHoy.map(c => {
+                    const edad = calcularEdad(c.dia, c.mes, c.anio);
+                    return edad ? c.nombre + ' (' + edad + ' años)' : c.nombre;
+                }).join(' y ');
                 panelHoy.innerHTML = `
                     <div class="bg-gradient-to-br from-amber-400 to-orange-500 text-white p-5 rounded-2xl shadow-md text-center animate-bounce">
                         <span class="material-icons text-4xl mb-1">celebration</span>
                         <h2 class="text-xl font-bold">¡HOY CUMPLE AÑOS!</h2>
-                        <p class="text-2xl font-extrabold mt-1">${nombres} 🎉</p>
+                        <p class="text-2xl font-extrabold mt-1">${nombresConEdad} 🎉</p>
                     </div>
                 `;
             } else {
@@ -211,15 +236,17 @@
                 `;
             }
 
-            // 2. Renderizar Lista Completa Ordenada por Mes/Día
+            // Lista completa
             const listaEl = document.getElementById('lista-cumples');
             listaEl.innerHTML = '';
-            
             lista.sort((a, b) => (a.mes - b.mes) || (a.dia - b.dia));
 
             const mesesTexto = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
             lista.forEach(c => {
+                const edad = calcularEdad(c.dia, c.mes, c.anio);
+                const edadTexto = edad !== null ? '<span class="text-xs text-indigo-400 font-medium">' + edad + ' años</span>' : '<span class="text-xs text-gray-300 italic">sin año</span>';
+
                 const item = document.createElement('div');
                 item.className = "flex items-center justify-between py-3";
                 item.innerHTML = `
@@ -228,32 +255,53 @@
                             <span>${c.dia}</span>
                             <span class="text-[10px] uppercase font-medium text-indigo-400">${mesesTexto[c.mes]}</span>
                         </div>
-                        <span class="font-semibold text-gray-700">${escapeHTML(c.nombre)}</span>
+                        <div class="flex flex-col">
+                            <span class="font-semibold text-gray-700">${escapeHTML(c.nombre)}</span>
+                            ${edadTexto}
+                        </div>
                     </div>
-                    <button onclick="eliminarCumple('${c.id}')" class="text-gray-300 hover:text-red-500 transition p-1 rounded-lg hover:bg-gray-50">
-                        <span class="material-icons text-lg">delete</span>
-                    </button>
+                    <div class="flex gap-1">
+                        <button onclick="abrirModalEditar('${c.id}', '${escapeHTML(c.nombre)}', ${c.dia}, ${c.mes}, ${c.anio || ''})" class="text-gray-300 hover:text-indigo-500 transition p-1 rounded-lg hover:bg-gray-50">
+                            <span class="material-icons text-lg">edit</span>
+                        </button>
+                        <button onclick="eliminarCumple('${c.id}')" class="text-gray-300 hover:text-red-500 transition p-1 rounded-lg hover:bg-gray-50">
+                            <span class="material-icons text-lg">delete</span>
+                        </button>
+                    </div>
                 `;
                 listaEl.appendChild(item);
             });
         }
 
-        // Guardar Datos en Firebase
+        // Guardar (nuevo o edición)
         document.getElementById('cumple-form').addEventListener('submit', function(e) {
             e.preventDefault();
+            const editId = document.getElementById('edit-id').value;
             const nombre = document.getElementById('nombre').value;
             const dia = parseInt(document.getElementById('dia').value);
             const mes = parseInt(document.getElementById('mes').value);
+            const anioVal = document.getElementById('anio').value;
+            const anio = anioVal ? parseInt(anioVal) : null;
 
-            db.push({ nombre, dia, mes }, () => {
-                toggleFormulario();
-                document.getElementById('cumple-form').reset();
-            });
+            const datos = { nombre, dia, mes };
+            if (anio) datos.anio = anio;
+
+            if (editId) {
+                // Editar registro existente
+                firebase.database().ref('cumpleanos/' + editId).update(datos, () => {
+                    cerrarModal();
+                });
+            } else {
+                // Nuevo registro
+                db.push(datos, () => {
+                    cerrarModal();
+                    document.getElementById('cumple-form').reset();
+                });
+            }
         });
 
-        // Eliminar Registro
         window.eliminarCumple = function(id) {
-            if(confirm('¿Deseas eliminar este registro de cumpleaños?')) {
+            if (confirm('¿Deseas eliminar este registro de cumpleaños?')) {
                 firebase.database().ref('cumpleanos/' + id).remove();
             }
         }
@@ -262,7 +310,6 @@
             return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
         }
 
-        // Ejecutar comprobación al cargar la página
         comprobarAcceso();
     </script>
 </body>
