@@ -1,6 +1,6 @@
 name: Notificacion Cumpleanos 9AM
 
-on:
+'on':
   schedule:
     - cron: '0 12 * * *'
   workflow_dispatch:
@@ -49,7 +49,7 @@ jobs:
               }
 
               const nombres = cumpleaneros.map(c => c.nombre).join(' y ');
-              const mensaje = 'Hoy es el cumpleanos de ' + nombres + ' Felicitalo!';
+              const mensaje = 'Hoy es el cumpleanos de ' + nombres + '. Felicitalo!';
               console.log('Enviando notificacion: ' + mensaje);
 
               const body = JSON.stringify({
