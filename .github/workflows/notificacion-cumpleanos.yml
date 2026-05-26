@@ -2,8 +2,8 @@ name: Notificacion Cumpleanos 9AM
 
 'on':
   schedule:
-    - cron: '0 12 * * *'
-  workflow_dispatch:
+    - cron: '0 12 * * *'  # Ejecuta a las 12:00 UTC (09:00 AM hora de Uruguay)
+  workflow_dispatch:      # Te permite probarlo manualmente con un botón en GitHub
 
 jobs:
   enviar-notificacion:
@@ -18,44 +18,58 @@ jobs:
           node << 'EOF'
           const https = require('https');
 
-          const firebaseUrl = process.env.FIREBASE_DB_URL + '/cumpleanos.json';
+          // Validar que las variables de entorno existan
+          if (!process.env.FIREBASE_DB_URL || !process.env.ONESIGNAL_APP_ID || !process.env.ONESIGNAL_API_KEY) {
+            console.error('Error: Faltan configurar los Secrets en GitHub.');
+            process.exit(1);
+          }
+
+          // Limpiar la URL de Firebase por si viene con barra al final
+          const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, "");
+          const firebaseUrl = `${baseUrl}/cumpleanos.json`;
 
           https.get(firebaseUrl, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
-              const cumples = JSON.parse(data);
-              if (!cumples) {
-                console.log('No hay cumpleanos en la base de datos.');
+              if (res.statusCode !== 200) {
+                console.error(`Error al conectar con Firebase. Código de estado: ${res.statusCode}`);
                 return;
               }
 
-              const ahora = new Date();
-              const uruguayOffset = -3 * 60;
-              const localTime = new Date(ahora.getTime() + uruguayOffset * 60000);
-              const diaHoy = localTime.getUTCDate();
-              const mesHoy = localTime.getUTCMonth() + 1;
+              const cumples = JSON.parse(data);
+              if (!cumples) {
+                console.log('No hay cumpleaños en la base de datos.');
+                return;
+              }
 
-              console.log('Buscando cumpleanos para dia ' + diaHoy + ', mes ' + mesHoy);
+              // OBTENER FECHA EXACTA DE URUGUAY SIN ERRORES DE ZONA HORARIA
+              const opcionesFecha = { timeZone: 'America/Montevideo', day: 'numeric', month: 'numeric' };
+              const fechaUruguayStr = new Date().toLocaleString('es-UY', opcionesFecha);
+              
+              // fechaUruguayStr devuelve algo como "26/5" o "26/05"
+              const [diaHoy, mesHoy] = fechaUruguayStr.split('/').map(num => parseInt(num, 10));
+
+              console.log(`Fecha actual en Uruguay -> Día: ${diaHoy}, Mes: ${mesHoy}`);
 
               const lista = Object.values(cumples);
               const cumpleaneros = lista.filter(c =>
-                parseInt(c.dia) === diaHoy && parseInt(c.mes) === mesHoy
+                parseInt(c.dia, 10) === diaHoy && parseInt(c.mes, 10) === mesHoy
               );
 
               if (cumpleaneros.length === 0) {
-                console.log('Hoy no cumple anos nadie. No se envia notificacion.');
+                console.log('Hoy no cumple años nadie. No se envía notificación.');
                 return;
               }
 
               const nombres = cumpleaneros.map(c => c.nombre).join(' y ');
-              const mensaje = 'Hoy es el cumpleanos de ' + nombres + '. Felicitalo!';
-              console.log('Enviando notificacion: ' + mensaje);
+              const mensaje = `Hoy es el cumpleaños de ${nombres}. ¡No te olvides de saludar! 🎈🎉`;
+              console.log('Enviando notificación: ' + mensaje);
 
               const body = JSON.stringify({
                 app_id: process.env.ONESIGNAL_APP_ID,
                 included_segments: ['Total Subscriptions'],
-                headings: { es: 'Cumpleanos Hoy!' },
+                headings: { es: '¡Cumpleaños Hoy! 🎂' },
                 contents: { es: mensaje }
               });
 
@@ -78,7 +92,7 @@ jobs:
               });
 
               req.on('error', (e) => {
-                console.error('Error al enviar: ' + e.message);
+                console.error('Error al enviar a OneSignal: ' + e.message);
               });
 
               req.write(body);
