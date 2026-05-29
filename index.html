@@ -12,7 +12,6 @@
 </head>
 <body class="bg-gray-100 font-sans min-h-screen">
 
-    <!-- PANTALLA DE LOGIN -->
     <div id="login-screen" class="hidden fixed inset-0 bg-blue-900 flex items-center justify-center z-50 p-4">
         <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center">
             <span class="material-icons text-6xl text-blue-600 mb-2">lock</span>
@@ -24,10 +23,8 @@
         </div>
     </div>
 
-    <!-- APLICACIÓN PRINCIPAL -->
     <div id="app-content" class="container mx-auto p-4 max-w-md pb-24">
 
-        <!-- Encabezado -->
         <header class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 rounded-2xl shadow-lg mb-6 text-center">
             <h1 class="text-2xl font-bold flex items-center justify-center gap-2">
                 <span class="material-icons">cake</span> Cumples de la Familia
@@ -35,10 +32,8 @@
             <p class="text-blue-100 text-xs mt-1">¡Nunca más te olvides de saludar!</p>
         </header>
 
-        <!-- PANEL DE HOY -->
         <div id="panel-hoy" class="mb-6"></div>
 
-        <!-- LISTADO TOTAL -->
         <div class="bg-white rounded-2xl shadow-md p-4 mb-6">
             <h3 class="text-lg font-bold text-gray-800 mb-3 flex items-center gap-1">
                 <span class="material-icons text-indigo-500">star</span> Todos los Cumpleaños
@@ -46,14 +41,12 @@
             <div id="lista-cumples" class="divide-y divide-gray-100 max-h-96 overflow-y-auto pr-1"></div>
         </div>
 
-        <!-- BOTÓN AGREGAR -->
         <div class="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-full max-w-md px-4">
             <button onclick="abrirModalNuevo()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl shadow-xl transition flex items-center justify-center gap-2">
                 <span class="material-icons">add_circle</span> Agregar Cumpleaños
             </button>
         </div>
 
-        <!-- MODAL AGREGAR / EDITAR -->
         <div id="modal-form" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4">
             <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
                 <h3 id="modal-titulo" class="text-lg font-bold text-gray-800 mb-4">Nuevo Cumpleaños</h3>
@@ -199,7 +192,6 @@
             if (!anio) return null;
             const hoy = new Date();
             let edad = hoy.getFullYear() - anio;
-            // Si el cumpleaños de este año todavía no llegó, restar 1
             const cumpEsteAnio = new Date(hoy.getFullYear(), mes - 1, dia);
             if (hoy < cumpEsteAnio) edad--;
             return edad;
@@ -210,7 +202,6 @@
             const diaHoy = hoy.getDate();
             const mesHoy = hoy.getMonth() + 1;
 
-            // Panel de hoy
             const cumpleHoy = lista.filter(c => parseInt(c.dia) === diaHoy && parseInt(c.mes) === mesHoy);
             const panelHoy = document.getElementById('panel-hoy');
 
@@ -236,17 +227,14 @@
                 `;
             }
 
-            // Lista completa
             const listaEl = document.getElementById('lista-cumples');
             listaEl.innerHTML = '';
-            // Ordenar por proximidad desde hoy: los que vienen primero arriba,
-            // los que ya pasaron este año van al final (en orden entre ellos).
+            
             lista.sort((a, b) => {
                 function diasHasta(dia, mes) {
                     const hoy = new Date();
                     const anioBase = hoy.getFullYear();
                     let cumple = new Date(anioBase, mes - 1, dia);
-                    // Si ya pasó hoy (estrictamente), lo ponemos al año que viene para el sort
                     if (cumple < hoy && !(parseInt(dia) === diaHoy && parseInt(mes) === mesHoy)) {
                         cumple = new Date(anioBase + 1, mes - 1, dia);
                     }
@@ -287,7 +275,6 @@
             });
         }
 
-        // Guardar (nuevo o edición)
         document.getElementById('cumple-form').addEventListener('submit', function(e) {
             e.preventDefault();
             const editId = document.getElementById('edit-id').value;
@@ -301,12 +288,10 @@
             if (anio) datos.anio = anio;
 
             if (editId) {
-                // Editar registro existente
                 firebase.database().ref('cumpleanos/' + editId).update(datos, () => {
                     cerrarModal();
                 });
             } else {
-                // Nuevo registro
                 db.push(datos, () => {
                     cerrarModal();
                     document.getElementById('cumple-form').reset();
@@ -322,6 +307,17 @@
 
         function escapeHTML(str) {
             return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
+        }
+
+        // ── REGISTRO DEL SERVICE WORKER (Para segundo plano) ───────
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js').then(function(reg) {
+                    console.log('Service Worker registrado con éxito en el ámbito: ', reg.scope);
+                }).catch(function(err) {
+                    console.error('Fallo al registrar el Service Worker: ', err);
+                });
+            });
         }
 
         comprobarAcceso();
