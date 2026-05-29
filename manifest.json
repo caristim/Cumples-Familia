@@ -1,0 +1,16 @@
+{
+  "name": "Cumples Familia",
+  "short_name": "Cumples",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#2563eb",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3159/3159066.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
