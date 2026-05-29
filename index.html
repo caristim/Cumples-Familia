@@ -102,6 +102,7 @@
         const firebaseConfig = {
             apiKey: "AIzaSyAbQ6rToUzUgvhqFw5ynFpGQzI0pFDgb8I",
             authDomain: "cumples-familia.firebaseapp.com",
+            databaseURL: "https://cumples-familia-default-rtdb.firebaseio.com",
             projectId: "cumples-familia",
             storageBucket: "cumples-familia.firebasestorage.app",
             messagingSenderId: "456266355172",
@@ -111,22 +112,14 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database().ref('cumpleanos');
 
-        // ── REGISTRAR SERVICE WORKER ────────────────────────────────
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-                .then(reg => {
-                    console.log('✅ Service Worker registrado correctamente:', reg);
-                })
-                .catch(err => {
-                    console.error('❌ Error al registrar Service Worker:', err);
-                });
-        }
+      
 
         // ── ONESIGNAL ──────────────────────────────────────────────────
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
             await OneSignal.init({
                 appId: "b6abb876-1772-4c93-9fe4-876e3e4873ec",
+                serviceWorkerPath: "sw.js",
                 notifyButton: { enable: false },
                 promptOptions: {
                     slidedown: {
