@@ -2,6 +2,7 @@ name: Notificacion Cumpleanos 9AM
 
 on:
   schedule:
+    # 12:00 UTC es exactamente las 09:00 AM de Uruguay (UTC-3)
     - cron: '0 12 * * *'
   workflow_dispatch:
 
@@ -18,7 +19,6 @@ jobs:
 
         run: |
           node << 'EOF'
-
           const https = require('https');
 
           function salirError(msg) {
@@ -26,17 +26,9 @@ jobs:
             process.exit(1);
           }
 
-          if (!process.env.FIREBASE_DB_URL) {
-            salirError('Falta FIREBASE_DB_URL');
-          }
-
-          if (!process.env.ONESIGNAL_APP_ID) {
-            salirError('Falta ONESIGNAL_APP_ID');
-          }
-
-          if (!process.env.ONESIGNAL_API_KEY) {
-            salirError('Falta ONESIGNAL_API_KEY');
-          }
+          if (!process.env.FIREBASE_DB_URL) salirError('Falta FIREBASE_DB_URL');
+          if (!process.env.ONESIGNAL_APP_ID) salirError('Falta ONESIGNAL_APP_ID');
+          if (!process.env.ONESIGNAL_API_KEY) salirError('Falta ONESIGNAL_API_KEY');
 
           const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, '');
           const firebaseUrl = `${baseUrl}/cumpleanos.json`;
@@ -44,14 +36,91 @@ jobs:
           console.log('Consultando Firebase...');
 
           https.get(firebaseUrl, (resFirebase) => {
-
             let data = '';
-
-            resFirebase.on('data', chunk => {
-              data += chunk;
-            });
+            resFirebase.on('data', chunk => data += chunk);
 
             resFirebase.on('end', () => {
-
               if (resFirebase.statusCode < 200 || resFirebase.statusCode >= 300) {
+                salirError(`Error en Firebase: ${resFirebase.statusCode} - ${data}`);
+              }
+
+              const cumpleanos = JSON.parse(data);
+              if (!cumpleanos) {
+                console.log('No hay datos de cumpleaños en la base de datos.');
+                process.exit(0);
+              }
+
+              // Obtener fecha actual en la zona horaria de Uruguay (UTC-3)
+              const opciones = { timeZone: 'America/Montevideo', day: 'numeric', month: 'numeric' };
+              const formateador = new Intl.DateTimeFormat('es-UY', opciones);
+              const partes = formateador.formatToParts(new Date());
+              
+              const diaHoy = parseInt(partes.find(p => p.type === 'day').value, 10);
+              const mesHoy = parseInt(partes.find(p => p.type === 'month').value, 10);
+
+              console.log(`Fecha de hoy en Uruguay: ${diaHoy}/${mesHoy}`);
+
+              // Filtrar cumpleañeros
+              const cumpleanerosHoy = [];
+              for (const id in cumpleanos) {
+                const c = cumpleanos[id];
+                if (parseInt(c.dia, 10) === diaHoy && parseInt(c.mes, 10) === mesHoy) {
+                  cumpleanerosHoy.push(c);
+                }
+              }
+
+              if (cumpleanerosHoy.length === 0) {
+                console.log('Hoy no cumple años nadie. Fin del proceso.');
+                process.exit(0);
+              }
+
+              // Calcular edades si tienen año cargado
+              const anioHoy = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Montevideo"})).getFullYear();
+              const nombresTexto = cumpleanerosHoy.map(c => {
+                if (c.anio) {
+                  const edad = anioHoy - parseInt(c.anio, 10);
+                  return `${c.nombre} (${edad} años)`;
+                }
+                return c.nombre;
+              }).join(' y ');
+
+              console.log(`Cumpleaños detectados: ${nombresTexto}`);
+
+              // Configurar payload para OneSignal
+              const payload = JSON.stringify({
+                app_id: process.env.ONESIGNAL_APP_ID,
+                included_segments: ['All'],
+                headings: { en: '🎉 ¡Cumpleaños Familiar hoy! 🎉', es: '🎉 ¡Cumpleaños Familiar hoy! 🎉' },
+                contents: { 
+                  en: `Hoy cumple años: ${nombresTexto}. ¡No te olvides de saludar!`, 
+                  es: `Hoy cumple años: ${nombresTexto}. ¡No te olvides de saludar!` 
+                },
+                url: 'https://cumples-familia.firebaseapp.com' // Cambia esto por tu URL real si es diferente
+              });
+
+              // Enviar a OneSignal
+              const opcionesOs = {
+                hostname: 'onesignal.com',
+                path: '/api/v1/notifications',
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json; charset=utf-8',
+                  'Authorization': `Basic ${process.env.ONESIGNAL_API_KEY}`
+                }
+              };
+
+              const reqOs = https.request(opcionesOs, (resOs) => {
+                let respuestaOs = '';
+                resOs.on('data', chunk => respuestaOs += chunk);
+                resOs.on('end', () => {
+                  console.log(`Respuesta de OneSignal: ${respuestaOs}`);
+                  console.log('Notificación enviada con éxito.');
+                });
+              });
+
+              reqOs.on('error', (e) => salirError(`Error enviando a OneSignal: ${e.message}`));
+              reqOs.write(payload);
+              reqOs.end();
+            });
+          }).on('error', (e) => salirError(`Error consultando Firebase: ${e.message}`));
           EOF
