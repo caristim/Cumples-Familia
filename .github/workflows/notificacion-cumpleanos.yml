@@ -2,8 +2,9 @@ name: Notificacion Cumpleanos 9AM
 
 on:
   schedule:
-    # 12:00 UTC es exactamente las 09:00 AM de Uruguay (UTC-3)
-    - cron: '0 12 * * *'
+    # 11:00 UTC = 09:00 Uruguay (UTC-2 en verano, UTC-3 en invierno)
+    # Esto asegura que se ejecute a las 9 AM en Uruguay todo el año
+    - cron: '0 11 * * *'
   workflow_dispatch:
 
 jobs:
@@ -19,108 +20,149 @@ jobs:
 
         run: |
           node << 'EOF'
+
           const https = require('https');
 
           function salirError(msg) {
-            console.error(msg);
+            console.error('❌ Error:', msg);
             process.exit(1);
           }
 
-          if (!process.env.FIREBASE_DB_URL) salirError('Falta FIREBASE_DB_URL');
-          if (!process.env.ONESIGNAL_APP_ID) salirError('Falta ONESIGNAL_APP_ID');
-          if (!process.env.ONESIGNAL_API_KEY) salirError('Falta ONESIGNAL_API_KEY');
+          function log(msg) {
+            console.log('ℹ️ ', msg);
+          }
+
+          // Validar variables de entorno
+          if (!process.env.FIREBASE_DB_URL) {
+            salirError('Falta FIREBASE_DB_URL en los secretos de GitHub');
+          }
+
+          if (!process.env.ONESIGNAL_APP_ID) {
+            salirError('Falta ONESIGNAL_APP_ID en los secretos de GitHub');
+          }
+
+          if (!process.env.ONESIGNAL_API_KEY) {
+            salirError('Falta ONESIGNAL_API_KEY en los secretos de GitHub');
+          }
 
           const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, '');
           const firebaseUrl = `${baseUrl}/cumpleanos.json`;
 
-          console.log('Consultando Firebase...');
+          log('Consultando Firebase en: ' + firebaseUrl);
+
+          // Obtener la fecha actual en timezone de Uruguay (UTC-3 / UTC-2)
+          const ahora = new Date();
+          const horaUruguay = new Date(ahora.toLocaleString('es-UY', { timeZone: 'America/Montevideo' }));
+          const diaHoy = horaUruguay.getDate();
+          const mesHoy = horaUruguay.getMonth() + 1;
+
+          log(`Fecha actual en Uruguay: ${diaHoy}/${mesHoy}/${horaUruguay.getFullYear()}`);
 
           https.get(firebaseUrl, (resFirebase) => {
+
             let data = '';
-            resFirebase.on('data', chunk => data += chunk);
+
+            resFirebase.on('data', chunk => {
+              data += chunk;
+            });
 
             resFirebase.on('end', () => {
+
               if (resFirebase.statusCode < 200 || resFirebase.statusCode >= 300) {
-                salirError(`Error en Firebase: ${resFirebase.statusCode} - ${data}`);
+                salirError(`Firebase respondió con status ${resFirebase.statusCode}`);
               }
 
-              const cumpleanos = JSON.parse(data);
-              if (!cumpleanos) {
-                console.log('No hay datos de cumpleaños en la base de datos.');
+              let cumpleanos = {};
+              try {
+                cumpleanos = JSON.parse(data);
+              } catch (e) {
+                salirError('Error al parsear JSON de Firebase: ' + e.message);
+              }
+
+              if (!cumpleanos || Object.keys(cumpleanos).length === 0) {
+                log('No hay cumpleaños registrados en Firebase');
                 process.exit(0);
               }
 
-              // Obtener fecha actual en la zona horaria de Uruguay (UTC-3)
-              const opciones = { timeZone: 'America/Montevideo', day: 'numeric', month: 'numeric' };
-              const formateador = new Intl.DateTimeFormat('es-UY', opciones);
-              const partes = formateador.formatToParts(new Date());
-              
-              const diaHoy = parseInt(partes.find(p => p.type === 'day').value, 10);
-              const mesHoy = parseInt(partes.find(p => p.type === 'month').value, 10);
-
-              console.log(`Fecha de hoy en Uruguay: ${diaHoy}/${mesHoy}`);
-
-              // Filtrar cumpleañeros
-              const cumpleanerosHoy = [];
-              for (const id in cumpleanos) {
-                const c = cumpleanos[id];
-                if (parseInt(c.dia, 10) === diaHoy && parseInt(c.mes, 10) === mesHoy) {
-                  cumpleanerosHoy.push(c);
+              // Filtrar cumpleaños de hoy
+              const cumpleHoy = [];
+              for (let id in cumpleanos) {
+                const cumple = cumpleanos[id];
+                if (parseInt(cumple.dia) === diaHoy && parseInt(cumple.mes) === mesHoy) {
+                  cumpleHoy.push(cumple.nombre);
                 }
               }
 
-              if (cumpleanerosHoy.length === 0) {
-                console.log('Hoy no cumple años nadie. Fin del proceso.');
+              if (cumpleHoy.length === 0) {
+                log('Hoy no hay cumpleaños que celebrar');
                 process.exit(0);
               }
 
-              // Calcular edades si tienen año cargado
-              const anioHoy = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Montevideo"})).getFullYear();
-              const nombresTexto = cumpleanerosHoy.map(c => {
-                if (c.anio) {
-                  const edad = anioHoy - parseInt(c.anio, 10);
-                  return `${c.nombre} (${edad} años)`;
-                }
-                return c.nombre;
-              }).join(' y ');
+              log(`¡Encontrados ${cumpleHoy.length} cumpleaños para hoy!`);
+              log('Cumpleaños: ' + cumpleHoy.join(', '));
 
-              console.log(`Cumpleaños detectados: ${nombresTexto}`);
+              // Preparar mensaje
+              const nombres = cumpleHoy.join(' y ');
+              const titulo = cumpleHoy.length === 1 ? '¡Hoy cumple años!' : '¡Hoy cumplen años!';
+              const mensaje = `${nombres} está de cumpleaños hoy. ¡No olvides saludar! 🎉`;
 
-              // Configurar payload para OneSignal
-              const payload = JSON.stringify({
-                app_id: process.env.ONESIGNAL_APP_ID,
+              // Enviar notificación a través de OneSignal
+              const appId = process.env.ONESIGNAL_APP_ID;
+              const apiKey = process.env.ONESIGNAL_API_KEY;
+
+              const notificationData = {
+                app_id: appId,
                 included_segments: ['All'],
-                headings: { en: '🎉 ¡Cumpleaños Familiar hoy! 🎉', es: '🎉 ¡Cumpleaños Familiar hoy! 🎉' },
-                contents: { 
-                  en: `Hoy cumple años: ${nombresTexto}. ¡No te olvides de saludar!`, 
-                  es: `Hoy cumple años: ${nombresTexto}. ¡No te olvides de saludar!` 
-                },
-                url: 'https://cumples-familia.firebaseapp.com' // Cambia esto por tu URL real si es diferente
-              });
+                headings: { en: titulo },
+                contents: { en: mensaje },
+                big_picture: 'https://cdn-icons-png.flaticon.com/512/3159/3159066.png',
+                large_icon: 'https://cdn-icons-png.flaticon.com/512/3159/3159066.png',
+                ios_badgeType: 'Increase',
+                ios_badgeCount: 1
+              };
 
-              // Enviar a OneSignal
-              const opcionesOs = {
+              log('Enviando notificación a través de OneSignal...');
+
+              const options = {
                 hostname: 'onesignal.com',
+                port: 443,
                 path: '/api/v1/notifications',
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json; charset=utf-8',
-                  'Authorization': `Basic ${process.env.ONESIGNAL_API_KEY}`
+                  'Authorization': 'Basic ' + apiKey
                 }
               };
 
-              const reqOs = https.request(opcionesOs, (resOs) => {
-                let respuestaOs = '';
-                resOs.on('data', chunk => respuestaOs += chunk);
-                resOs.on('end', () => {
-                  console.log(`Respuesta de OneSignal: ${respuestaOs}`);
-                  console.log('Notificación enviada con éxito.');
+              const req = https.request(options, (res) => {
+                let responseData = '';
+
+                res.on('data', chunk => {
+                  responseData += chunk;
+                });
+
+                res.on('end', () => {
+                  if (res.statusCode === 200) {
+                    log('✅ Notificación enviada exitosamente a todos los usuarios');
+                    log('Respuesta de OneSignal: ' + responseData);
+                    process.exit(0);
+                  } else {
+                    salirError(`OneSignal respondió con status ${res.statusCode}: ${responseData}`);
+                  }
                 });
               });
 
-              reqOs.on('error', (e) => salirError(`Error enviando a OneSignal: ${e.message}`));
-              reqOs.write(payload);
-              reqOs.end();
+              req.on('error', (error) => {
+                salirError('Error al conectar con OneSignal: ' + error.message);
+              });
+
+              req.write(JSON.stringify(notificationData));
+              req.end();
+
             });
-          }).on('error', (e) => salirError(`Error consultando Firebase: ${e.message}`));
+
+          }).on('error', (error) => {
+            salirError('Error al conectar con Firebase: ' + error.message);
+          });
+
           EOF
