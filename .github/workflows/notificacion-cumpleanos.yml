@@ -1,127 +1,57 @@
 name: Notificacion Cumpleanos 9AM
 
-'on':
+on:
   schedule:
-    - cron: '0 12 * * *'  # 12:00 UTC = 09:00 AM hora de Uruguay (UTC-3, sin DST)
-  workflow_dispatch:       # Permite probarlo manualmente desde GitHub
+    - cron: '0 12 * * *'
+  workflow_dispatch:
 
 jobs:
   enviar-notificacion:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Verificar cumpleanos y notificar
+      - name: Verificar cumpleaños y enviar notificación
         env:
           FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
           ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
           ONESIGNAL_API_KEY: ${{ secrets.ONESIGNAL_API_KEY }}
+
         run: |
           node << 'EOF'
+
           const https = require('https');
 
-          // Validar que las variables de entorno existan
-          if (!process.env.FIREBASE_DB_URL || !process.env.ONESIGNAL_APP_ID || !process.env.ONESIGNAL_API_KEY) {
-            console.error('Error: Faltan configurar los Secrets en GitHub.');
+          function salirError(msg) {
+            console.error(msg);
             process.exit(1);
           }
 
-          // Limpiar la URL de Firebase por si viene con barra al final
-          const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, "");
+          if (!process.env.FIREBASE_DB_URL) {
+            salirError('Falta FIREBASE_DB_URL');
+          }
+
+          if (!process.env.ONESIGNAL_APP_ID) {
+            salirError('Falta ONESIGNAL_APP_ID');
+          }
+
+          if (!process.env.ONESIGNAL_API_KEY) {
+            salirError('Falta ONESIGNAL_API_KEY');
+          }
+
+          const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, '');
           const firebaseUrl = `${baseUrl}/cumpleanos.json`;
 
+          console.log('Consultando Firebase...');
+
           https.get(firebaseUrl, (resFirebase) => {
+
             let data = '';
-            resFirebase.on('data', chunk => data += chunk);
-            resFirebase.on('end', () => {
-              if (resFirebase.statusCode !== 200) {
-                console.error(`Error al conectar con Firebase. Código de estado: ${resFirebase.statusCode}`);
-                console.error('Respuesta: ' + data);
-                process.exit(1);
-              }
 
-              // FIX: try/catch para manejar respuesta JSON inválida de Firebase
-              let cumples;
-              try {
-                cumples = JSON.parse(data);
-              } catch (parseError) {
-                console.error('Error: La respuesta de Firebase no es JSON válido.');
-                console.error('Respuesta recibida: ' + data);
-                process.exit(1);
-              }
-
-              if (!cumples) {
-                console.log('No hay cumpleaños en la base de datos.');
-                process.exit(0);
-              }
-
-              // OBTENER FECHA EXACTA DE URUGUAY SIN ERRORES DE ZONA HORARIA
-              const opcionesFecha = { timeZone: 'America/Montevideo', day: 'numeric', month: 'numeric' };
-              const fechaUruguayStr = new Date().toLocaleString('es-UY', opcionesFecha);
-
-              // fechaUruguayStr devuelve algo como "26/5" o "26/05"
-              const [diaHoy, mesHoy] = fechaUruguayStr.split('/').map(num => parseInt(num, 10));
-
-              console.log(`Fecha actual en Uruguay -> Día: ${diaHoy}, Mes: ${mesHoy}`);
-
-              const lista = Object.values(cumples);
-              const cumpleaneros = lista.filter(c =>
-                parseInt(c.dia, 10) === diaHoy && parseInt(c.mes, 10) === mesHoy
-              );
-
-              if (cumpleaneros.length === 0) {
-                console.log('Hoy no cumple años nadie. No se envía notificación.');
-                process.exit(0);
-              }
-
-              const nombres = cumpleaneros.map(c => c.nombre).join(' y ');
-              const mensaje = `Hoy es el cumpleaños de ${nombres}. ¡No te olvides de saludar! 🎈🎉`;
-              console.log('Enviando notificación: ' + mensaje);
-
-              const body = JSON.stringify({
-                app_id: process.env.ONESIGNAL_APP_ID,
-                included_segments: ['Total Subscriptions'],
-                headings: { es: '¡Cumpleaños Hoy! 🎂' },
-                contents: { es: mensaje }
-              });
-
-              // FIX: Content-Length es obligatorio para que OneSignal acepte el body correctamente
-              const bodyBuffer = Buffer.from(body, 'utf8');
-
-              const options = {
-                hostname: 'api.onesignal.com',
-                path: '/notifications',
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Content-Length': bodyBuffer.length,
-                  'Authorization': 'Key ' + process.env.ONESIGNAL_API_KEY
-                }
-              };
-
-              // FIX: renombrar el callback a resOneSignal para evitar shadowing con resFirebase
-              const req = https.request(options, (resOneSignal) => {
-                let respuesta = '';
-                resOneSignal.on('data', chunk => respuesta += chunk);
-                resOneSignal.on('end', () => {
-                  console.log('Respuesta de OneSignal (status ' + resOneSignal.statusCode + '): ' + respuesta);
-                  if (resOneSignal.statusCode !== 200) {
-                    console.error('Error: OneSignal devolvió un código de error.');
-                    process.exit(1);
-                  }
-                  // FIX: terminar el proceso limpiamente tras éxito
-                  process.exit(0);
-                });
-              });
-
-              req.on('error', (e) => {
-                console.error('Error al enviar a OneSignal: ' + e.message);
-                process.exit(1);
-              });
-
-              req.write(bodyBuffer);
-              req.end();
+            resFirebase.on('data', chunk => {
+              data += chunk;
             });
-          }).on('error', (e) => {
-            console.error('Error al leer Firebase: ' + e.message);
-            process.exit(1);
-          });
+
+            resFirebase.on('end', () => {
+
+              if (resFirebase.statusCode < 200 || resFirebase.statusCode >= 300) {
           EOF
