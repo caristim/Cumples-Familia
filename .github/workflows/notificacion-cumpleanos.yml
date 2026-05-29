@@ -2,8 +2,8 @@ name: Notificacion Cumpleanos 9AM
 
 'on':
   schedule:
-    - cron: '0 12 * * *'  # Ejecuta a las 12:00 UTC (09:00 AM hora de Uruguay)
-  workflow_dispatch:      # Te permite probarlo manualmente con un botón en GitHub
+    - cron: '0 12 * * *'  # 12:00 UTC = 09:00 AM hora de Uruguay (UTC-3, sin DST)
+  workflow_dispatch:       # Permite probarlo manualmente desde GitHub
 
 jobs:
   enviar-notificacion:
@@ -28,25 +28,35 @@ jobs:
           const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, "");
           const firebaseUrl = `${baseUrl}/cumpleanos.json`;
 
-          https.get(firebaseUrl, (res) => {
+          https.get(firebaseUrl, (resFirebase) => {
             let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-              if (res.statusCode !== 200) {
-                console.error(`Error al conectar con Firebase. Código de estado: ${res.statusCode}`);
-                return;
+            resFirebase.on('data', chunk => data += chunk);
+            resFirebase.on('end', () => {
+              if (resFirebase.statusCode !== 200) {
+                console.error(`Error al conectar con Firebase. Código de estado: ${resFirebase.statusCode}`);
+                console.error('Respuesta: ' + data);
+                process.exit(1);
               }
 
-              const cumples = JSON.parse(data);
+              // FIX: try/catch para manejar respuesta JSON inválida de Firebase
+              let cumples;
+              try {
+                cumples = JSON.parse(data);
+              } catch (parseError) {
+                console.error('Error: La respuesta de Firebase no es JSON válido.');
+                console.error('Respuesta recibida: ' + data);
+                process.exit(1);
+              }
+
               if (!cumples) {
                 console.log('No hay cumpleaños en la base de datos.');
-                return;
+                process.exit(0);
               }
 
               // OBTENER FECHA EXACTA DE URUGUAY SIN ERRORES DE ZONA HORARIA
               const opcionesFecha = { timeZone: 'America/Montevideo', day: 'numeric', month: 'numeric' };
               const fechaUruguayStr = new Date().toLocaleString('es-UY', opcionesFecha);
-              
+
               // fechaUruguayStr devuelve algo como "26/5" o "26/05"
               const [diaHoy, mesHoy] = fechaUruguayStr.split('/').map(num => parseInt(num, 10));
 
@@ -59,7 +69,7 @@ jobs:
 
               if (cumpleaneros.length === 0) {
                 console.log('Hoy no cumple años nadie. No se envía notificación.');
-                return;
+                process.exit(0);
               }
 
               const nombres = cumpleaneros.map(c => c.nombre).join(' y ');
@@ -73,32 +83,45 @@ jobs:
                 contents: { es: mensaje }
               });
 
+              // FIX: Content-Length es obligatorio para que OneSignal acepte el body correctamente
+              const bodyBuffer = Buffer.from(body, 'utf8');
+
               const options = {
                 hostname: 'api.onesignal.com',
                 path: '/notifications',
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
+                  'Content-Length': bodyBuffer.length,
                   'Authorization': 'Key ' + process.env.ONESIGNAL_API_KEY
                 }
               };
 
-              const req = https.request(options, (res) => {
+              // FIX: renombrar el callback a resOneSignal para evitar shadowing con resFirebase
+              const req = https.request(options, (resOneSignal) => {
                 let respuesta = '';
-                res.on('data', chunk => respuesta += chunk);
-                res.on('end', () => {
-                  console.log('Respuesta de OneSignal: ' + respuesta);
+                resOneSignal.on('data', chunk => respuesta += chunk);
+                resOneSignal.on('end', () => {
+                  console.log('Respuesta de OneSignal (status ' + resOneSignal.statusCode + '): ' + respuesta);
+                  if (resOneSignal.statusCode !== 200) {
+                    console.error('Error: OneSignal devolvió un código de error.');
+                    process.exit(1);
+                  }
+                  // FIX: terminar el proceso limpiamente tras éxito
+                  process.exit(0);
                 });
               });
 
               req.on('error', (e) => {
                 console.error('Error al enviar a OneSignal: ' + e.message);
+                process.exit(1);
               });
 
-              req.write(body);
+              req.write(bodyBuffer);
               req.end();
             });
           }).on('error', (e) => {
             console.error('Error al leer Firebase: ' + e.message);
+            process.exit(1);
           });
           EOF
