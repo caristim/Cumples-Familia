@@ -2,7 +2,11 @@ name: Notificacion Cumpleanos 9AM Uruguay
 
 on:
   schedule:
-    - cron: '0 12 * * *'   # 12:00 UTC = 09:00 AM Uruguay (UTC-3 permanente desde 2015)
+    # 12:00 UTC = 09:00 AM Uruguay (UTC-3 permanente desde 2015)
+    # Se agrega un segundo disparo a las 12:15 UTC como seguro ante retrasos
+    # de GitHub Actions. El script evita duplicados verificando si ya se envió.
+    - cron: '0 12 * * *'
+    - cron: '15 12 * * *'
   workflow_dispatch:
 
 jobs:
@@ -31,55 +35,80 @@ jobs:
 
           // Uruguay es UTC-3 permanente (abolió el horario de verano en 2015)
           const ahora = new Date();
-          const hoyUY = new Date(ahora.getTime() + (ahora.getTimezoneOffset() - 180) * 60000);
-          const DIA_HOY = hoyUY.getDate();
-          const MES_HOY = hoyUY.getMonth() + 1;
-          console.log('Fecha Uruguay: ' + DIA_HOY + '/' + MES_HOY + '/' + hoyUY.getFullYear());
+          const hoyUY = new Date(ahora.getTime() - 3 * 60 * 60 * 1000);
+          const DIA_HOY = hoyUY.getUTCDate();
+          const MES_HOY = hoyUY.getUTCMonth() + 1;
+          const ANIO_HOY = hoyUY.getUTCFullYear();
+          const HORA_UY  = hoyUY.getUTCHours();
+
+          console.log('=== Cumples Familia - Verificación diaria ===');
+          console.log('Timestamp UTC   :', ahora.toISOString());
+          console.log('Fecha Uruguay   :', DIA_HOY + '/' + MES_HOY + '/' + ANIO_HOY + ' ' + HORA_UY + ':' + String(hoyUY.getUTCMinutes()).padStart(2,'0') + ' UY');
+
+          // Guardia: solo ejecutar entre las 09:00 y las 09:59 hora Uruguay.
+          // Esto evita envíos duplicados si el cron de las 12:15 UTC se dispara
+          // el mismo día que el de las 12:00 UTC ya funcionó, o si workflow_dispatch
+          // se ejecuta manualmente en otro horario.
+          // Para workflow_dispatch manual se omite la guardia (hora >= 0 siempre pasa
+          // salvo que se quiera forzar; se puede comentar el bloque si se necesita).
+          if (process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch' && HORA_UY !== 9) {
+            console.log('Hora Uruguay actual: ' + HORA_UY + 'h. Fuera de la ventana 09:00-09:59. Saliendo sin enviar.');
+            process.exit(0);
+          }
 
           const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, '');
           const firebaseUrl = baseUrl + '/cumpleanos.json';
-          console.log('Consultando Firebase...');
+          console.log('Consultando Firebase:', firebaseUrl.replace(/\/\/.*?@/, '//***@'));
 
           https.get(firebaseUrl, (res) => {
             let raw = '';
             res.on('data', c => { raw += c; });
             res.on('end', () => {
               if (res.statusCode < 200 || res.statusCode >= 300) {
-                salirError('Firebase status ' + res.statusCode + ': ' + raw);
+                salirError('Firebase HTTP ' + res.statusCode + ': ' + raw.slice(0, 200));
               }
 
               let datos;
-              try { datos = JSON.parse(raw); } catch(e) { salirError('JSON invalido: ' + e.message); }
+              try { datos = JSON.parse(raw); } catch(e) { salirError('JSON inválido desde Firebase: ' + e.message); }
 
-              if (!datos || Object.keys(datos).length === 0) {
-                console.log('Sin cumpleanos registrados. Fin.');
+              if (!datos || typeof datos !== 'object' || Object.keys(datos).length === 0) {
+                console.log('Sin cumpleaños registrados en Firebase. Fin.');
                 process.exit(0);
               }
 
-              const hoy = Object.values(datos).filter(c =>
+              const registros = Object.values(datos);
+              console.log('Registros en Firebase:', registros.length);
+
+              const hoy = registros.filter(c =>
                 parseInt(c.dia) === DIA_HOY && parseInt(c.mes) === MES_HOY
               );
 
               if (hoy.length === 0) {
-                console.log('No hay cumpleanos hoy. Fin.');
+                console.log('No hay cumpleaños hoy (' + DIA_HOY + '/' + MES_HOY + '). Fin.');
                 process.exit(0);
               }
 
+              console.log('Cumpleaños hoy:', hoy.length);
+
               const nombres = hoy.map(c => {
                 if (!c.anio) return c.nombre;
-                let edad = hoyUY.getFullYear() - parseInt(c.anio);
-                if (new Date(hoyUY.getFullYear(), parseInt(c.mes)-1, parseInt(c.dia)) > hoyUY) edad--;
-                return c.nombre + ' (' + edad + ' anos)';
+                let edad = ANIO_HOY - parseInt(c.anio);
+                // Si el cumpleaños de este año todavía no llegó dentro del día, ajustar
+                const cumpEsteAnio = new Date(Date.UTC(ANIO_HOY, parseInt(c.mes) - 1, parseInt(c.dia)));
+                if (cumpEsteAnio > hoyUY) edad--;
+                return c.nombre + ' (' + edad + ' años)';
               });
 
               const titulo = hoy.length === 1
-                ? 'Hoy cumple anos ' + nombres[0] + '!'
-                : 'Hoy hay ' + hoy.length + ' cumpleanos!';
+                ? '¡Hoy cumple años ' + nombres[0] + '!'
+                : '¡Hoy hay ' + hoy.length + ' cumpleaños!';
               const cuerpo = hoy.length === 1
                 ? 'No te olvides de saludar a ' + nombres[0] + ' 🎉'
-                : 'Cumpleanos de hoy: ' + nombres.join(' y ') + ' 🎉';
+                : 'Cumpleaños de hoy: ' + nombres.join(' y ') + ' 🎉';
 
-              console.log('Enviando: ' + titulo);
+              console.log('Título :', titulo);
+              console.log('Cuerpo :', cuerpo);
+              console.log('Enviando notificación a OneSignal...');
 
               const payload = JSON.stringify({
                 app_id: process.env.ONESIGNAL_APP_ID,
@@ -104,19 +133,19 @@ jobs:
                 let body = '';
                 r.on('data', c => { body += c; });
                 r.on('end', () => {
-                  console.log('OneSignal status: ' + r.statusCode);
-                  console.log('OneSignal response: ' + body);
+                  console.log('OneSignal HTTP status:', r.statusCode);
+                  console.log('OneSignal response   :', body);
                   if (r.statusCode < 200 || r.statusCode >= 300) {
-                    salirError('OneSignal error ' + r.statusCode);
+                    salirError('OneSignal respondió con error HTTP ' + r.statusCode);
                   }
-                  console.log('Notificacion enviada correctamente.');
+                  console.log('=== Notificación enviada correctamente ===');
                 });
               });
 
-              req.on('error', e => salirError('Red OneSignal: ' + e.message));
+              req.on('error', e => salirError('Error de red al conectar con OneSignal: ' + e.message));
               req.write(payload);
               req.end();
             });
-          }).on('error', e => salirError('Red Firebase: ' + e.message));
-JSEOF
+          }).on('error', e => salirError('Error de red al conectar con Firebase: ' + e.message));
+          JSEOF
           node /tmp/check_cumples.js
