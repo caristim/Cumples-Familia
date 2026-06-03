@@ -34,8 +34,42 @@
         </div>
     </div>
 
+    <!-- BANNER iOS: solo aparece en Safari/iOS cuando la app NO está instalada como PWA -->
+    <div id="banner-ios" class="hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-2xl p-4">
+        <div class="max-w-md mx-auto flex items-start gap-3">
+            <span class="material-icons text-blue-600 text-3xl mt-0.5 shrink-0">ios_share</span>
+            <div class="flex-1">
+                <p class="font-bold text-gray-800 text-sm">Instalá la app para recibir notificaciones</p>
+                <p class="text-gray-500 text-xs mt-0.5">
+                    Tocá <strong>Compartir</strong> <span class="inline-block align-middle">⬆️</span> y luego
+                    <strong>"Agregar a pantalla de inicio"</strong> para recibir los avisos de cumpleaños a las 9 AM.
+                </p>
+            </div>
+            <button onclick="cerrarBannerIOS()" class="text-gray-400 hover:text-gray-600 shrink-0 mt-0.5">
+                <span class="material-icons text-xl">close</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- BANNER PERMISOS DENEGADOS: Android/Desktop -->
+    <div id="banner-permisos" class="hidden fixed bottom-0 left-0 right-0 z-50 bg-amber-50 border-t border-amber-200 shadow-2xl p-4">
+        <div class="max-w-md mx-auto flex items-start gap-3">
+            <span class="material-icons text-amber-500 text-3xl mt-0.5 shrink-0">notifications_off</span>
+            <div class="flex-1">
+                <p class="font-bold text-gray-800 text-sm">Notificaciones bloqueadas</p>
+                <p class="text-gray-500 text-xs mt-0.5">
+                    Para recibir avisos de cumpleaños, habilitá las notificaciones en la
+                    configuración de tu navegador y recargá la página.
+                </p>
+            </div>
+            <button onclick="cerrarBannerPermisos()" class="text-gray-400 hover:text-gray-600 shrink-0 mt-0.5">
+                <span class="material-icons text-xl">close</span>
+            </button>
+        </div>
+    </div>
+
     <!-- APLICACIÓN PRINCIPAL -->
-    <div id="app-content" class="container mx-auto p-4 max-w-md pb-24">
+    <div id="app-content" class="hidden container mx-auto p-4 max-w-md pb-24">
 
         <!-- Encabezado -->
         <header class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 rounded-2xl shadow-lg mb-6 text-center">
@@ -91,7 +125,8 @@
                         </div>
                         <div>
                             <label class="block text-gray-600 text-sm font-medium mb-1">Año</label>
-                            <input type="number" id="anio" min="1900" max="2025" placeholder="1985" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                            <!-- El máximo se asigna dinámicamente para que siempre sea el año actual -->
+                            <input type="number" id="anio" min="1900" placeholder="1985" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                         </div>
                     </div>
                     <p class="text-xs text-gray-400">El año es opcional. Si lo agregás, se calculará la edad automáticamente.</p>
@@ -108,6 +143,9 @@
     <script>
         const PIN_CORRECTO = "3333";
 
+        // Año máximo dinámico para el campo "Año" del formulario
+        document.getElementById('anio').max = new Date().getFullYear();
+
         const firebaseConfig = {
             apiKey: "AIzaSyAbQ6rToUzUgvhqFw5ynFpGQzI0pFDgb8I",
             authDomain: "cumples-familia.firebaseapp.com",
@@ -120,8 +158,6 @@
 
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database().ref('cumpleanos');
-
-      
 
         // ── ONESIGNAL ──────────────────────────────────────────────────
         window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -145,14 +181,55 @@
                     }
                 }
             });
-        });
-        // ── FIN ONESIGNAL ──────────────────────────────────────────
 
-        // ── LOGIN ──────────────────────────────────────────────────
+            // Detectar si el usuario denegó los permisos en Android/Desktop
+            // y mostrar el banner de ayuda correspondiente
+            const permiso = await OneSignal.Notifications.permission;
+            if (!permiso && Notification.permission === 'denied') {
+                mostrarBannerPermisos();
+            }
+        });
+        // ── FIN ONESIGNAL ──────────────────────────────────────────────
+
+        // ── BANNER iOS ─────────────────────────────────────────────────
+        // Se muestra solo si: es Safari en iOS Y la app NO está instalada como PWA
+        function detectarBannerIOS() {
+            const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+            // En modo standalone (instalada) window.navigator.standalone es true
+            const esPWA = window.navigator.standalone === true;
+            const esSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+            const bannerYaCerrado = sessionStorage.getItem('banner_ios_cerrado');
+
+            if (esIOS && esSafari && !esPWA && !bannerYaCerrado) {
+                document.getElementById('banner-ios').classList.remove('hidden');
+            }
+        }
+
+        function cerrarBannerIOS() {
+            document.getElementById('banner-ios').classList.add('hidden');
+            // Solo suprimir el banner por esta sesión; volver a mostrarlo la próxima vez
+            sessionStorage.setItem('banner_ios_cerrado', '1');
+        }
+
+        // ── BANNER PERMISOS DENEGADOS ──────────────────────────────────
+        function mostrarBannerPermisos() {
+            // No mostrar en iOS (tienen su propio banner)
+            const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+            if (!esIOS) {
+                document.getElementById('banner-permisos').classList.remove('hidden');
+            }
+        }
+
+        function cerrarBannerPermisos() {
+            document.getElementById('banner-permisos').classList.add('hidden');
+        }
+
+        // ── LOGIN ──────────────────────────────────────────────────────
         function comprobarAcceso() {
             if (localStorage.getItem('access_granted') === 'true') {
                 document.getElementById('app-content').classList.remove('hidden');
                 inicializarApp();
+                detectarBannerIOS();
             } else {
                 document.getElementById('login-screen').classList.remove('hidden');
             }
@@ -165,13 +242,14 @@
                 document.getElementById('login-screen').classList.add('hidden');
                 document.getElementById('app-content').classList.remove('hidden');
                 inicializarApp();
+                detectarBannerIOS();
             } else {
                 document.getElementById('login-error').classList.remove('hidden');
                 document.getElementById('pin-input').value = '';
             }
         }
 
-        // ── MODAL ──────────────────────────────────────────────────
+        // ── MODAL ──────────────────────────────────────────────────────
         function abrirModalNuevo() {
             document.getElementById('modal-titulo').textContent = 'Nuevo Cumpleaños';
             document.getElementById('cumple-form').reset();
@@ -193,7 +271,7 @@
             document.getElementById('modal-form').classList.add('hidden');
         }
 
-        // ── APP ────────────────────────────────────────────────────
+        // ── APP ────────────────────────────────────────────────────────
         function inicializarApp() {
             escucharBaseDatos();
         }
@@ -273,7 +351,9 @@
 
             lista.forEach(c => {
                 const edad = calcularEdad(c.dia, c.mes, c.anio);
-                const edadTexto = edad !== null ? '<span class="text-xs text-indigo-400 font-medium">' + edad + ' años</span>' : '<span class="text-xs text-gray-300 italic">sin año</span>';
+                const edadTexto = edad !== null
+                    ? '<span class="text-xs text-indigo-400 font-medium">' + edad + ' años</span>'
+                    : '<span class="text-xs text-gray-300 italic">sin año</span>';
 
                 const item = document.createElement('div');
                 item.className = "flex items-center justify-between py-3";
