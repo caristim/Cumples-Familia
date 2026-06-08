@@ -128,7 +128,6 @@
                         </div>
                         <div>
                             <label class="block text-gray-600 text-sm font-medium mb-1">Año</label>
-                            <!-- El máximo se asigna dinámicamente para que siempre sea el año actual -->
                             <input type="number" id="anio" min="1900" placeholder="1985" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                         </div>
                     </div>
@@ -163,17 +162,18 @@
         const db = firebase.database().ref('cumpleanos');
 
         // ── ONESIGNAL ──────────────────────────────────────────────────
-        // CORRECCIÓN 1: serviceWorkerPath apunta al archivo renombrado
-        //               "OneSignalSDK.sw.js" (nombre requerido por OneSignal v16).
-        // CORRECCIÓN 2: serviceWorkerParam con scope "/" garantiza que el SW
-        //               cubra toda la app, incluso cuando GitHub Pages sirve
-        //               desde un subdirectorio (p. ej. /Cumples-Familia/).
+        // serviceWorkerPath apunta al archivo "OneSignalSDK.sw.js" en la
+        // raíz del repositorio. NO se pasa serviceWorkerParam porque el
+        // sitio está alojado en un subdirectorio de GitHub Pages
+        // (caristim.github.io/Cumples-Familia/) y el navegador rechazaría
+        // un scope "/" más amplio que la ubicación del SW.
+        // OneSignal v16 maneja el scope automáticamente de forma correcta
+        // cuando no se lo forzamos.
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
             await OneSignal.init({
                 appId: "b6abb876-1772-4c93-9fe4-876e3e4873ec",
                 serviceWorkerPath: "OneSignalSDK.sw.js",
-                serviceWorkerParam: { scope: "/" },
                 notifyButton: { enable: false },
                 promptOptions: {
                     slidedown: {
@@ -201,14 +201,11 @@
         // ── FIN ONESIGNAL ──────────────────────────────────────────────
 
         // ── BANNER iOS ─────────────────────────────────────────────────
-        // Se muestra solo si: es Safari en iOS Y la app NO está instalada como PWA
         function detectarBannerIOS() {
             const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-            // En modo standalone (instalada) window.navigator.standalone es true
             const esPWA = window.navigator.standalone === true;
             const esSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
             const bannerYaCerrado = sessionStorage.getItem('banner_ios_cerrado');
-
             if (esIOS && esSafari && !esPWA && !bannerYaCerrado) {
                 document.getElementById('banner-ios').classList.remove('hidden');
             }
@@ -216,13 +213,11 @@
 
         function cerrarBannerIOS() {
             document.getElementById('banner-ios').classList.add('hidden');
-            // Solo suprimir el banner por esta sesión; volver a mostrarlo la próxima vez
             sessionStorage.setItem('banner_ios_cerrado', '1');
         }
 
         // ── BANNER PERMISOS DENEGADOS ──────────────────────────────────
         function mostrarBannerPermisos() {
-            // No mostrar en iOS (tienen su propio banner)
             const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
             if (!esIOS) {
                 document.getElementById('banner-permisos').classList.remove('hidden');
@@ -300,7 +295,6 @@
             if (!anio) return null;
             const hoy = new Date();
             let edad = hoy.getFullYear() - anio;
-            // Si el cumpleaños de este año todavía no llegó, restar 1
             const cumpEsteAnio = new Date(hoy.getFullYear(), mes - 1, dia);
             if (hoy < cumpEsteAnio) edad--;
             return edad;
@@ -311,7 +305,6 @@
             const diaHoy = hoy.getDate();
             const mesHoy = hoy.getMonth() + 1;
 
-            // Panel de hoy
             const cumpleHoy = lista.filter(c => parseInt(c.dia) === diaHoy && parseInt(c.mes) === mesHoy);
             const panelHoy = document.getElementById('panel-hoy');
 
@@ -337,17 +330,14 @@
                 `;
             }
 
-            // Lista completa
             const listaEl = document.getElementById('lista-cumples');
             listaEl.innerHTML = '';
-            // Ordenar por proximidad desde hoy: los que vienen primero arriba,
-            // los que ya pasaron este año van al final (en orden entre ellos).
+
             lista.sort((a, b) => {
                 function diasHasta(dia, mes) {
                     const hoy = new Date();
                     const anioBase = hoy.getFullYear();
                     let cumple = new Date(anioBase, mes - 1, dia);
-                    // Si ya pasó hoy (estrictamente), lo ponemos al año que viene para el sort
                     if (cumple < hoy && !(parseInt(dia) === diaHoy && parseInt(mes) === mesHoy)) {
                         cumple = new Date(anioBase + 1, mes - 1, dia);
                     }
@@ -390,7 +380,6 @@
             });
         }
 
-        // Guardar (nuevo o edición)
         document.getElementById('cumple-form').addEventListener('submit', function(e) {
             e.preventDefault();
             const editId = document.getElementById('edit-id').value;
@@ -404,12 +393,10 @@
             if (anio) datos.anio = anio;
 
             if (editId) {
-                // Editar registro existente
                 firebase.database().ref('cumpleanos/' + editId).update(datos, () => {
                     cerrarModal();
                 });
             } else {
-                // Nuevo registro
                 db.push(datos, () => {
                     cerrarModal();
                     document.getElementById('cumple-form').reset();
