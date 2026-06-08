@@ -2,8 +2,8 @@
   "name": "Cumples Familia - Recordatorio de Cumpleaños",
   "short_name": "Cumples",
   "description": "Nunca olvides un cumpleaños familiar. Recibe notificaciones a las 9 AM.",
-  "start_url": ".",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0F172A",
   "theme_color": "#7C3AED",
@@ -42,7 +42,7 @@
       "name": "Agregar Cumpleaño",
       "short_name": "Agregar",
       "description": "Agregar un nuevo cumpleaño a la lista",
-      "url": "/?action=add",
+      "url": "./?action=add",
       "icons": [
         {
           "src": "icon.svg",
