@@ -163,11 +163,17 @@
         const db = firebase.database().ref('cumpleanos');
 
         // ── ONESIGNAL ──────────────────────────────────────────────────
+        // CORRECCIÓN 1: serviceWorkerPath apunta al archivo renombrado
+        //               "OneSignalSDK.sw.js" (nombre requerido por OneSignal v16).
+        // CORRECCIÓN 2: serviceWorkerParam con scope "/" garantiza que el SW
+        //               cubra toda la app, incluso cuando GitHub Pages sirve
+        //               desde un subdirectorio (p. ej. /Cumples-Familia/).
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
             await OneSignal.init({
                 appId: "b6abb876-1772-4c93-9fe4-876e3e4873ec",
-                serviceWorkerPath: "sw.js",
+                serviceWorkerPath: "OneSignalSDK.sw.js",
+                serviceWorkerParam: { scope: "/" },
                 notifyButton: { enable: false },
                 promptOptions: {
                     slidedown: {
