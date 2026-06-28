@@ -10,7 +10,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Cumples">
-    <link rel="apple-touch-icon" href="icon.svg">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
     <!-- PWA: Android / Chrome -->
     <meta name="theme-color" content="#7C3AED">
@@ -31,6 +31,140 @@
             <input type="password" id="pin-input" maxlength="4" placeholder="••••" class="w-32 text-center text-3xl tracking-widest p-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 mb-4">
             <p id="login-error" class="text-red-500 text-sm hidden mb-4">⚠️ PIN Incorrecto. Intenta de nuevo.</p>
             <button onclick="verificarPIN()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-md">Ingresar</button>
+        </div>
+    </div>
+
+    <!-- MODAL GUÍA DE INSTALACIÓN Y REQUISITOS -->
+    <div id="modal-guia" class="hidden fixed inset-0 bg-black/60 flex items-end justify-center z-50 p-0">
+        <div class="bg-white w-full max-w-md rounded-t-3xl shadow-2xl overflow-y-auto max-h-[92vh]">
+            <div class="sticky top-0 bg-white border-b border-gray-100 px-5 pt-5 pb-4 flex items-center justify-between rounded-t-3xl">
+                <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <span class="material-icons text-indigo-600">notifications_active</span>
+                    Cómo activar las notificaciones
+                </h2>
+                <button onclick="cerrarGuia()" class="text-gray-400 hover:text-gray-600 p-1">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <!-- Tabs Android / iOS -->
+            <div class="flex border-b border-gray-100 px-5">
+                <button id="tab-android" onclick="mostrarTab('android')"
+                    class="flex-1 py-3 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 flex items-center justify-center gap-1">
+                    <span class="material-icons text-base">android</span> Android
+                </button>
+                <button id="tab-ios" onclick="mostrarTab('ios')"
+                    class="flex-1 py-3 text-sm font-semibold text-gray-400 border-b-2 border-transparent flex items-center justify-center gap-1">
+                    <span class="material-icons text-base">phone_iphone</span> iPhone / iPad
+                </button>
+            </div>
+
+            <!-- Contenido Android -->
+            <div id="content-android" class="px-5 py-4 space-y-4">
+                <p class="text-xs text-gray-500">Sigue estos pasos para recibir los avisos de cumpleaños aunque la app esté cerrada.</p>
+
+                <div class="flex gap-3 items-start bg-indigo-50 rounded-xl p-3">
+                    <span class="bg-indigo-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">1</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">Instala la app en la pantalla de inicio</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Abre Chrome → toca el menú <strong>⋮</strong> → <strong>"Agregar a pantalla de inicio"</strong> → toca <strong>"Instalar"</strong>.</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 items-start bg-indigo-50 rounded-xl p-3">
+                    <span class="bg-indigo-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">2</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">Acepta las notificaciones</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Cuando la app te pregunte si querés recibir avisos, toca <strong>"Sí, avisar"</strong>. Sin este paso no llegan las notificaciones.</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 items-start bg-amber-50 rounded-xl p-3">
+                    <span class="bg-amber-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">3</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">Desactivá las restricciones de batería</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Ve a <strong>Ajustes → Batería → Optimización de batería</strong>, buscá <strong>Chrome</strong> y seleccioná <strong>"Sin restricciones"</strong>. Si no lo hacés, Android puede bloquear las notificaciones cuando la pantalla está apagada.</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 items-start bg-green-50 rounded-xl p-3">
+                    <span class="bg-green-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">✓</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">¡Listo!</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Los días que haya un cumpleaños, vas a recibir un aviso a las 9 AM aunque la app esté cerrada.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contenido iOS -->
+            <div id="content-ios" class="hidden px-5 py-4 space-y-4">
+                <p class="text-xs text-gray-500">En iPhone e iPad seguí estos pasos exactos. Las notificaciones solo funcionan si la app está instalada como PWA.</p>
+
+                <div class="flex gap-3 items-start bg-indigo-50 rounded-xl p-3">
+                    <span class="bg-indigo-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">1</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">Usá Safari (obligatorio)</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Las notificaciones push en iOS solo funcionan desde <strong>Safari</strong>. Chrome, Firefox u otros navegadores en iPhone no lo soportan.</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 items-start bg-indigo-50 rounded-xl p-3">
+                    <span class="bg-indigo-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">2</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">iOS 16.4 o superior</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Las notificaciones push para apps web requieren <strong>iOS 16.4+</strong>. Verificá en <strong>Ajustes → General → Información → Versión de software</strong>.</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 items-start bg-indigo-50 rounded-xl p-3">
+                    <span class="bg-indigo-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">3</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">Agrega la app a la pantalla de inicio</p>
+                        <p class="text-gray-500 text-xs mt-0.5">En Safari, toca el botón <strong>Compartir ⬆️</strong> en la barra inferior → desplazá hacia abajo → toca <strong>"Agregar a pantalla de inicio"</strong> → <strong>"Agregar"</strong>.</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 items-start bg-indigo-50 rounded-xl p-3">
+                    <span class="bg-indigo-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">4</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">Abre la app desde el ícono instalado</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Toca el ícono de <strong>Cumples Familia</strong> en tu pantalla de inicio (no desde Safari). Esto la abre en modo PWA, que es el único modo que soporta notificaciones.</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 items-start bg-amber-50 rounded-xl p-3">
+                    <span class="bg-amber-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">5</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">Acepta las notificaciones</p>
+                        <p class="text-gray-500 text-xs mt-0.5">La app te pedirá permiso para enviarte notificaciones. Toca <strong>"Permitir"</strong>. Si lo rechazaste antes, ve a <strong>Ajustes → Cumples Familia → Notificaciones → activar "Permitir notificaciones"</strong>.</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 items-start bg-green-50 rounded-xl p-3">
+                    <span class="bg-green-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">✓</span>
+                    <div>
+                        <p class="font-semibold text-gray-800 text-sm">¡Listo!</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Los días que haya un cumpleaños, vas a recibir un aviso a las 9 AM aunque la app esté cerrada.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-5 pb-6">
+                <button onclick="cerrarGuia()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition">
+                    Entendido
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BANNER ONESIGNAL FALLA AL CARGAR -->
+    <div id="banner-onesignal-error" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-50 border-b border-red-200 shadow p-3">
+        <div class="max-w-md mx-auto flex items-center gap-3">
+            <span class="material-icons text-red-500 shrink-0">error_outline</span>
+            <p class="text-red-700 text-xs flex-1">No se pudo activar las notificaciones. Verificá tu conexión y recargá la página.</p>
+            <button onclick="document.getElementById('banner-onesignal-error').classList.add('hidden')" class="text-red-400 hover:text-red-600 shrink-0">
+                <span class="material-icons text-lg">close</span>
+            </button>
         </div>
     </div>
 
@@ -72,13 +206,17 @@
     <div id="app-content" class="hidden container mx-auto p-4 max-w-md pb-24">
 
         <!-- Encabezado -->
-        <header class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 rounded-2xl shadow-lg mb-6 text-center">
+        <header class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 rounded-2xl shadow-lg mb-6 text-center relative">
+            <button onclick="abrirGuia()" title="Cómo activar las notificaciones"
+                class="absolute top-3 right-3 bg-white/20 hover:bg-white/30 rounded-full p-1.5 transition"
+                aria-label="Guía de notificaciones">
+                <span class="material-icons text-white text-lg">notifications_active</span>
+            </button>
             <h1 class="text-2xl font-bold flex items-center justify-center gap-2">
                 <span class="material-icons">cake</span> Cumples de la Familia
             </h1>
             <p class="text-blue-100 text-xs mt-1">¡Nunca más te olvides de saludar!</p>
         </header>
-
         <!-- PANEL DE HOY -->
         <div id="panel-hoy" class="mb-6"></div>
 
@@ -413,6 +551,51 @@
         function escapeHTML(str) {
             return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
         }
+
+        // ── GUÍA DE INSTALACIÓN ───────────────────────────────────────────────
+        function abrirGuia() {
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            mostrarTab(isIOS ? 'ios' : 'android');
+            document.getElementById('modal-guia').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+        function cerrarGuia() {
+            document.getElementById('modal-guia').classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+        function mostrarTab(tab) {
+            const tabs    = ['android', 'ios'];
+            tabs.forEach(t => {
+                const btn     = document.getElementById('tab-' + t);
+                const content = document.getElementById('content-' + t);
+                if (t === tab) {
+                    btn.classList.add('text-indigo-600', 'border-indigo-600');
+                    btn.classList.remove('text-gray-400', 'border-transparent');
+                    content.classList.remove('hidden');
+                } else {
+                    btn.classList.remove('text-indigo-600', 'border-indigo-600');
+                    btn.classList.add('text-gray-400', 'border-transparent');
+                    content.classList.add('hidden');
+                }
+            });
+        }
+        // Cerrar modal al tocar el fondo oscuro
+        document.getElementById('modal-guia').addEventListener('click', function(e) {
+            if (e.target === this) cerrarGuia();
+        });
+        window.abrirGuia = abrirGuia;
+        window.cerrarGuia = cerrarGuia;
+        window.mostrarTab = mostrarTab;
+
+        // ── DETECTOR DE ERROR DE ONESIGNAL ───────────────────────────────────
+        // Si el SDK de OneSignal no carga (CDN caído, sin conexión, etc.)
+        // en 8 segundos, mostramos el banner de error para que el usuario sepa
+        // que sus notificaciones no están activas.
+        setTimeout(() => {
+            if (typeof OneSignal === 'undefined' || !OneSignal.initialized) {
+                document.getElementById('banner-onesignal-error').classList.remove('hidden');
+            }
+        }, 8000);
 
         comprobarAcceso();
     </script>
