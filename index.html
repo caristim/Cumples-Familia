@@ -300,16 +300,14 @@
         const db = firebase.database().ref('cumpleanos');
 
         // ── ONESIGNAL ──────────────────────────────────────────────────
-        // serviceWorkerPath usa ruta absoluta desde la raíz del subdir
-        // para evitar que GitHub Pages lo resuelva incorrectamente.
-        // serviceWorkerParam scope explícito para el subdirectorio.
-        // pageViews: 0 → el slidedown se muestra desde la primera visita
-        // y vuelve a mostrarse si el usuario lo cerró sin responder.
+        // OneSignal v16 busca "OneSignalSDKWorker.js" (nombre hardcodeado).
+        // serviceWorkerPath apunta al archivo con el nombre correcto dentro
+        // del subdirectorio /Cumples-Familia/ de GitHub Pages.
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
             await OneSignal.init({
                 appId: "b6abb876-1772-4c93-9fe4-876e3e4873ec",
-                serviceWorkerPath: "/Cumples-Familia/OneSignalSDK.sw.js",
+                serviceWorkerPath: "/Cumples-Familia/OneSignalSDKWorker.js",
                 serviceWorkerParam: { scope: "/Cumples-Familia/" },
                 notifyButton: { enable: false },
                 promptOptions: {
