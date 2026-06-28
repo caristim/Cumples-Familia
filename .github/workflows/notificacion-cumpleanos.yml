@@ -2,9 +2,6 @@ name: Notificacion Cumpleanos 9AM Uruguay
 
 on:
   schedule:
-    # 12:00 UTC = 09:00 AM Uruguay (UTC-3 permanente desde 2015)
-    # Segundo disparo a las 12:15 UTC como respaldo ante retrasos de GitHub Actions.
-    # El script evita duplicados con un flag en Firebase Realtime Database.
     - cron: '0 12 * * *'
     - cron: '15 12 * * *'
   workflow_dispatch:
@@ -14,25 +11,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Instalar dependencias
+        run: npm install web-push
+
       - name: Verificar cumpleaños y enviar notificación
         env:
-          FIREBASE_DB_URL:            ${{ secrets.FIREBASE_DB_URL }}
-          CF_FIREBASE_PROJECT_ID:     ${{ secrets.CF_FIREBASE_PROJECT_ID }}
-          CF_FIREBASE_SERVICE_ACCOUNT: ${{ secrets.CF_FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_DB_URL:    ${{ secrets.FIREBASE_DB_URL }}
+          CF_VAPID_PUBLIC_KEY:  ${{ secrets.CF_VAPID_PUBLIC_KEY }}
+          CF_VAPID_PRIVATE_KEY: ${{ secrets.CF_VAPID_PRIVATE_KEY }}
+          CF_VAPID_SUBJECT:     ${{ secrets.CF_VAPID_SUBJECT }}
 
         run: |
           node << 'EOF'
           'use strict';
-          const https  = require('https');
-          const crypto = require('crypto');
+          const https   = require('https');
+          const webpush = require('web-push');
 
           function salirError(msg) { console.error('ERROR:', msg); process.exit(1); }
 
-          if (!process.env.FIREBASE_DB_URL)             salirError('Falta FIREBASE_DB_URL');
-          if (!process.env.CF_FIREBASE_PROJECT_ID)      salirError('Falta CF_FIREBASE_PROJECT_ID');
-          if (!process.env.CF_FIREBASE_SERVICE_ACCOUNT) salirError('Falta CF_FIREBASE_SERVICE_ACCOUNT');
+          if (!process.env.FIREBASE_DB_URL)     salirError('Falta FIREBASE_DB_URL');
+          if (!process.env.CF_VAPID_PUBLIC_KEY)  salirError('Falta CF_VAPID_PUBLIC_KEY');
+          if (!process.env.CF_VAPID_PRIVATE_KEY) salirError('Falta CF_VAPID_PRIVATE_KEY');
+          if (!process.env.CF_VAPID_SUBJECT)     salirError('Falta CF_VAPID_SUBJECT');
 
-          // Uruguay es UTC-3 permanente (abolió el horario de verano en 2015)
+          webpush.setVapidDetails(
+            process.env.CF_VAPID_SUBJECT,
+            process.env.CF_VAPID_PUBLIC_KEY,
+            process.env.CF_VAPID_PRIVATE_KEY
+          );
+
           const ahora   = new Date();
           const uyStr   = ahora.toLocaleString('en-US', { timeZone: 'America/Montevideo' });
           const uyDate  = new Date(uyStr);
@@ -41,20 +48,17 @@ jobs:
           const ANIO_HOY = uyDate.getFullYear();
           const HORA_UY  = uyDate.getHours();
           const FECHA_HOY_STR = ANIO_HOY + '-' + String(MES_HOY).padStart(2,'0') + '-' + String(DIA_HOY).padStart(2,'0');
-          const baseUrl  = process.env.FIREBASE_DB_URL.replace(/\/$/, '');
-          const projectId = process.env.CF_FIREBASE_PROJECT_ID;
+          const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, '');
 
           console.log('=== Cumples Familia - Verificación diaria ===');
           console.log('Timestamp UTC   :', ahora.toISOString());
           console.log('Fecha Uruguay   :', DIA_HOY + '/' + MES_HOY + '/' + ANIO_HOY + ' ' + HORA_UY + ':' + String(uyDate.getMinutes()).padStart(2,'0') + ' UY');
 
-          // Guardia de hora: solo ejecutar entre las 08:00 y las 11:59 hora Uruguay
           if (process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch' && (HORA_UY < 8 || HORA_UY > 11)) {
-            console.log('Hora Uruguay: ' + HORA_UY + 'h. Fuera de la ventana 08:00-11:59. Saliendo.');
+            console.log('Fuera de la ventana 08:00-11:59 UY. Saliendo.');
             process.exit(0);
           }
 
-          // ── Helpers HTTP ──────────────────────────────────────────────────────
           function httpGet(url) {
             return new Promise((resolve, reject) => {
               https.get(url, res => {
@@ -78,135 +82,25 @@ jobs:
             });
           }
 
-          // ── JWT / OAuth2 para Google APIs ─────────────────────────────────────
-          function base64url(str) {
-            return Buffer.from(str).toString('base64')
-              .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-          }
-
-          function getGoogleToken(sa) {
-            return new Promise((resolve, reject) => {
-              const now     = Math.floor(Date.now() / 1000);
-              const header  = { alg: 'RS256', typ: 'JWT' };
-              const payload = {
-                iss:   sa.client_email,
-                scope: 'https://www.googleapis.com/auth/firebase.messaging https://www.googleapis.com/auth/firebase',
-                aud:   'https://oauth2.googleapis.com/token',
-                iat:   now,
-                exp:   now + 3600,
-              };
-              const sigInput = base64url(JSON.stringify(header)) + '.' + base64url(JSON.stringify(payload));
-              const sign     = crypto.createSign('RSA-SHA256');
-              sign.update(sigInput);
-              const jwt  = sigInput + '.' + sign.sign(sa.private_key, 'base64')
-                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-              const body = 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=' + jwt;
-              const req  = https.request({
-                hostname: 'oauth2.googleapis.com',
-                path:     '/token',
-                method:   'POST',
-                headers:  { 'Content-Type': 'application/x-www-form-urlencoded' },
-              }, res => {
-                let d = '';
-                res.on('data', c => d += c);
-                res.on('end', () => {
-                  try {
-                    const p = JSON.parse(d);
-                    if (p.access_token) resolve(p.access_token);
-                    else reject(new Error('OAuth2 error: ' + d));
-                  } catch(e) { reject(e); }
-                });
-              });
-              req.on('error', reject);
-              req.write(body);
-              req.end();
-            });
-          }
-
-          // ── Envío FCM HTTP v1 (data-only, sin notification field) ─────────────
-          // Sin "notification" a nivel raíz → el OS no intercepta el push
-          // → el SW recibe el evento push → sw.js muestra la notificación
-          // → funciona con la app cerrada en Android y Edge.
-          function fcmSend(accessToken, token, titulo, cuerpo, tag) {
-            return new Promise((resolve) => {
-              const appUrl = 'https://caristim.github.io/Cumples-Familia/';
-              const body   = JSON.stringify({
-                message: {
-                  token,
-                  data: { title: titulo, body: cuerpo, url: appUrl, tag },
-                  android: { priority: 'HIGH', ttl: '86400s' },
-                  webpush: {
-                    headers: { Urgency: 'high', TTL: '86400' },
-                    fcm_options: { link: appUrl },
-                  },
-                },
-              });
-              const req = https.request({
-                hostname: 'fcm.googleapis.com',
-                path:     '/v1/projects/' + projectId + '/messages:send',
-                method:   'POST',
-                headers:  {
-                  'Content-Type':  'application/json',
-                  'Authorization': 'Bearer ' + accessToken,
-                },
-              }, res => {
-                let r = '';
-                res.on('data', c => r += c);
-                res.on('end', () => {
-                  let parsed = {};
-                  try { parsed = JSON.parse(r); } catch(_) {}
-                  if (parsed.error) {
-                    const details   = parsed.error.details || [];
-                    const fcmErr    = details.find(d => d.errorCode);
-                    const errorCode = fcmErr ? fcmErr.errorCode : (parsed.error.status || 'UNKNOWN');
-                    const invalid   = ['UNREGISTERED', 'INVALID_ARGUMENT'].includes(errorCode);
-                    console.log('  FCM [' + errorCode + ']: ' + token.substring(0,24) + '... → ' + (invalid ? 'token inválido' : 'error temporal'));
-                    resolve({ invalid });
-                  } else {
-                    console.log('  FCM ✓ OK: ' + token.substring(0,24) + '...');
-                    resolve({ invalid: false });
-                  }
-                });
-              });
-              req.on('error', e => { console.warn('  FCM error de red:', e.message); resolve({ invalid: false }); });
-              req.write(body);
-              req.end();
-            });
-          }
-
-          // ── Eliminar suscripción inválida de Firebase Realtime Database ───────
-          function eliminarSuscripcion(docKey) {
-            return new Promise(resolve => {
-              const delUrl = new URL(baseUrl + '/webpush_subscriptions/' + docKey + '.json');
-              const req    = https.request({
-                hostname: delUrl.hostname,
-                path:     delUrl.pathname,
-                method:   'DELETE',
-              }, res => { res.resume(); res.on('end', resolve); });
-              req.on('error', () => resolve());
-              req.end();
-            });
-          }
-
           async function main() {
-            // 1. Verificar flag de deduplicación
-            const flagUrl = baseUrl + '/notificaciones_enviadas/' + FECHA_HOY_STR + '.json';
+            // 1. Flag de deduplicación
+            const flagUrl  = baseUrl + '/notificaciones_enviadas/' + FECHA_HOY_STR + '.json';
             console.log('Verificando flag de deduplicación:', FECHA_HOY_STR);
             const flagResp = await httpGet(flagUrl).catch(e => salirError('Red flag: ' + e.message));
             if (flagResp.status < 200 || flagResp.status >= 300) salirError('Firebase flag HTTP ' + flagResp.status);
-            const flagVal = JSON.parse(flagResp.body);
+            const flagVal  = JSON.parse(flagResp.body);
             if (flagVal !== null && flagVal !== false) {
               console.log('Notificación de hoy ya enviada. Saliendo.');
               process.exit(0);
             }
 
-            // 2. Leer cumpleaños de Realtime Database
+            // 2. Leer cumpleaños
             const firebaseUrl = baseUrl + '/cumpleanos.json';
             console.log('Consultando Firebase:', firebaseUrl.replace(/\/\/.*?\./, '//***.'));
             const dataResp = await httpGet(firebaseUrl).catch(e => salirError('Red Firebase: ' + e.message));
             if (dataResp.status < 200 || dataResp.status >= 300) salirError('Firebase HTTP ' + dataResp.status);
             let datos;
-            try { datos = JSON.parse(dataResp.body); } catch(e) { salirError('JSON inválido: ' + e.message); }
+            try { datos = JSON.parse(dataResp.body); } catch(e) { salirError('JSON inválido'); }
             if (!datos || typeof datos !== 'object') { console.log('Sin registros. Fin.'); process.exit(0); }
 
             const registros = Object.values(datos);
@@ -220,22 +114,20 @@ jobs:
               if (new Date(ANIO_HOY, parseInt(c.mes) - 1, parseInt(c.dia)) > uyDate) edad--;
               return c.nombre + ' (' + edad + ' años)';
             });
-            const titulo = hoy.length === 1 ? '¡Hoy cumple años ' + nombres[0] + '!' : '¡Hoy hay ' + hoy.length + ' cumpleaños!';
-            const cuerpo = hoy.length === 1 ? 'No te olvides de saludar a ' + nombres[0] + ' 🎉' : 'Cumpleaños de hoy: ' + nombres.join(' y ') + ' 🎉';
-            const tag    = 'cf-cumple-' + FECHA_HOY_STR;
+            const titulo = hoy.length === 1
+              ? '¡Hoy cumple años ' + nombres[0] + '!'
+              : '¡Hoy hay ' + hoy.length + ' cumpleaños!';
+            const cuerpo = hoy.length === 1
+              ? 'No te olvides de saludar a ' + nombres[0] + ' 🎉'
+              : 'Cumpleaños de hoy: ' + nombres.join(' y ') + ' 🎉';
+            const tag = 'cf-cumple-' + FECHA_HOY_STR;
             console.log('Título :', titulo);
             console.log('Cuerpo :', cuerpo);
 
-            // 3. OAuth2 token para FCM
-            let sa;
-            try { sa = JSON.parse(process.env.CF_FIREBASE_SERVICE_ACCOUNT); }
-            catch(e) { salirError('CF_FIREBASE_SERVICE_ACCOUNT no es JSON válido'); }
-            const accessToken = await getGoogleToken(sa).catch(e => salirError('OAuth2: ' + e.message));
-            console.log('Token Google OAuth2: ✓ OK');
-
-            // 4. Leer suscripciones WebPush (tokens FCM) de Realtime Database
+            // 3. Leer suscripciones WebPush
             console.log('\nLeyendo suscripciones WebPush...');
-            const subsResp = await httpGet(baseUrl + '/webpush_subscriptions.json').catch(() => ({ status: 200, body: 'null' }));
+            const subsResp = await httpGet(baseUrl + '/webpush_subscriptions.json')
+              .catch(() => ({ status: 200, body: 'null' }));
             let subsData = null;
             try { subsData = JSON.parse(subsResp.body); } catch(_) {}
             const suscripciones = subsData && typeof subsData === 'object'
@@ -244,33 +136,51 @@ jobs:
             console.log('Suscripciones WebPush registradas:', suscripciones.length);
             if (suscripciones.length === 0) { console.log('No hay suscriptores. Fin.'); process.exit(0); }
 
-            // 5. Enviar FCM a cada endpoint registrado
-            // FCM HTTP v1 acepta endpoints WebPush de Google (fcm.googleapis.com)
-            // y los convierte internamente al canal correcto (Android, Edge, etc.)
+            // 4. Enviar WebPush con VAPID a cada suscriptor
+            const payload = JSON.stringify({
+              title: titulo,
+              body:  cuerpo,
+              url:   'https://caristim.github.io/Cumples-Familia/',
+              tag,
+            });
+
             const invalidos = [];
             let enviados = 0;
+
             for (const [docKey, sub] of suscripciones) {
-              // Extraer el token FCM del endpoint WebPush
-              // Formato: https://fcm.googleapis.com/fcm/send/TOKEN
-              const match = sub.endpoint.match(/fcm\.googleapis\.com\/fcm\/send\/(.+)$/);
-              if (!match) {
-                // Endpoint no es de FCM (ej: WNS de Edge Windows) — no soportado por FCM HTTP v1
-                console.log('  Saltando endpoint no-FCM:', sub.endpoint.substring(0,60) + '...');
-                continue;
+              const subscription = {
+                endpoint: sub.endpoint,
+                keys:     { p256dh: sub.p256dh, auth: sub.auth },
+              };
+              try {
+                await webpush.sendNotification(subscription, payload, {
+                  TTL:     86400,
+                  urgency: 'high',
+                });
+                console.log('  WebPush ✓ OK:', sub.endpoint.substring(0, 60) + '...');
+                enviados++;
+              } catch (err) {
+                const invalido = err.statusCode === 404 || err.statusCode === 410;
+                console.log('  WebPush [' + (err.statusCode || err.message) + ']:', sub.endpoint.substring(0, 50) + '... →', invalido ? 'suscripción inválida' : 'error temporal');
+                if (invalido) invalidos.push(docKey);
               }
-              const token = match[1];
-              const r = await fcmSend(accessToken, token, titulo, cuerpo, tag);
-              if (r.invalid) invalidos.push(docKey);
-              else enviados++;
             }
 
-            // 6. Limpiar tokens inválidos
+            // 5. Limpiar suscripciones inválidas
             if (invalidos.length > 0) {
               console.log('\nLimpiando', invalidos.length, 'suscripción(es) inválida(s)...');
-              for (const dk of invalidos) await eliminarSuscripcion(dk);
+              for (const docKey of invalidos) {
+                const delUrl = new URL(baseUrl + '/webpush_subscriptions/' + docKey + '.json');
+                await httpRequest({
+                  hostname: delUrl.hostname,
+                  path:     delUrl.pathname,
+                  method:   'DELETE',
+                }, null).catch(e => console.warn('  Error eliminando:', e.message));
+                console.log('  Eliminado:', docKey);
+              }
             }
 
-            // 7. Guardar flag de deduplicación
+            // 6. Guardar flag de deduplicación
             const flagBody   = JSON.stringify(ahora.toISOString());
             const flagUrlObj = new URL(flagUrl);
             await httpRequest({
@@ -278,11 +188,11 @@ jobs:
               path:     flagUrlObj.pathname,
               method:   'PUT',
               headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(flagBody) },
-            }, flagBody).catch(e => console.warn('ADVERTENCIA: no se pudo guardar el flag:', e.message));
+            }, flagBody).catch(e => console.warn('ADVERTENCIA flag:', e.message));
             console.log('\nFlag de deduplicación guardado para', FECHA_HOY_STR);
 
             console.log('\n=== Proceso completado ===');
-            console.log('  FCM enviados:        ', enviados, '/', suscripciones.length);
+            console.log('  WebPush enviados:    ', enviados, '/', suscripciones.length);
             console.log('  Inválidos eliminados:', invalidos.length);
           }
 
