@@ -2,8 +2,8 @@
   "name": "Cumples Familia - Recordatorio de Cumpleaños",
   "short_name": "Cumples",
   "description": "Nunca olvides un cumpleaños familiar. Recibe notificaciones a las 9 AM.",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/Cumples-Familia/",
+  "scope": "/Cumples-Familia/",
   "display": "standalone",
   "background_color": "#0F172A",
   "theme_color": "#7C3AED",
@@ -11,15 +11,33 @@
   "categories": ["productivity", "utilities"],
   "icons": [
     {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ],
