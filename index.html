@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -76,15 +75,15 @@
                     <span class="bg-indigo-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">2</span>
                     <div>
                         <p class="font-semibold text-gray-800 text-sm">Acepta las notificaciones</p>
-                        <p class="text-gray-500 text-xs mt-0.5">Cuando la app te pregunte si quieres recibir avisos, toca <strong>"Sí, avisar"</strong>. Sin este paso no llegan las notificaciones.</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Cuando la app te pregunte si querés recibir avisos, toca <strong>"Sí, avisar"</strong>. Sin este paso no llegan las notificaciones.</p>
                     </div>
                 </div>
 
                 <div class="flex gap-3 items-start bg-amber-50 rounded-xl p-3">
                     <span class="bg-amber-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">3</span>
                     <div>
-                        <p class="font-semibold text-gray-800 text-sm">Desactiva las restricciones de batería</p>
-                        <p class="text-gray-500 text-xs mt-0.5">Ve a <strong>Ajustes → Batería → Optimización de batería</strong>, busca <strong>Chrome</strong> y selecciona <strong>"Sin restricciones"</strong>. Si no lo haces, Android puede bloquear las notificaciones cuando la pantalla está apagada.</p>
+                        <p class="font-semibold text-gray-800 text-sm">Desactivá las restricciones de batería</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Ve a <strong>Ajustes → Batería → Optimización de batería</strong>, buscá <strong>Chrome</strong> y seleccioná <strong>"Sin restricciones"</strong>. Si no lo hacés, Android puede bloquear las notificaciones cuando la pantalla está apagada.</p>
                     </div>
                 </div>
 
@@ -113,7 +112,7 @@
                     <span class="bg-indigo-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">2</span>
                     <div>
                         <p class="font-semibold text-gray-800 text-sm">iOS 16.4 o superior</p>
-                        <p class="text-gray-500 text-xs mt-0.5">Las notificaciones push para apps web requieren <strong>iOS 16.4+</strong>. Verifica en <strong>Ajustes → General → Información → Versión de software</strong>.</p>
+                        <p class="text-gray-500 text-xs mt-0.5">Las notificaciones push para apps web requieren <strong>iOS 16.4+</strong>. Verificá en <strong>Ajustes → General → Información → Versión de software</strong>.</p>
                     </div>
                 </div>
 
@@ -162,7 +161,7 @@
     <div id="banner-onesignal-error" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-50 border-b border-red-200 shadow p-3">
         <div class="max-w-md mx-auto flex items-center gap-3">
             <span class="material-icons text-red-500 shrink-0">error_outline</span>
-            <p class="text-red-700 text-xs flex-1">No se pudo activar las notificaciones. Verifica tu conexión y recarga la página.</p>
+            <p class="text-red-700 text-xs flex-1">No se pudo activar las notificaciones. Verificá tu conexión y recargá la página.</p>
             <button onclick="document.getElementById('banner-onesignal-error').classList.add('hidden')" class="text-red-400 hover:text-red-600 shrink-0">
                 <span class="material-icons text-lg">close</span>
             </button>
@@ -194,7 +193,7 @@
                 <p class="font-bold text-gray-800 text-sm">Notificaciones bloqueadas</p>
                 <p class="text-gray-500 text-xs mt-0.5">
                     Para recibir avisos de cumpleaños, habilitá las notificaciones en la
-                    configuración de tu navegador y recarga la página.
+                    configuración de tu navegador y recargá la página.
                 </p>
             </div>
             <button onclick="cerrarBannerPermisos()" class="text-gray-400 hover:text-gray-600 shrink-0 mt-0.5">
@@ -301,18 +300,17 @@
         const db = firebase.database().ref('cumpleanos');
 
         // ── ONESIGNAL ──────────────────────────────────────────────────
-        // serviceWorkerPath apunta al archivo "OneSignalSDK.sw.js" en la
-        // raíz del repositorio. NO se pasa serviceWorkerParam porque el
-        // sitio está alojado en un subdirectorio de GitHub Pages
-        // (caristim.github.io/Cumples-Familia/) y el navegador rechazaría
-        // un scope "/" más amplio que la ubicación del SW.
-        // OneSignal v16 maneja el scope automáticamente de forma correcta
-        // cuando no se lo forzamos.
+        // serviceWorkerPath usa ruta absoluta desde la raíz del subdir
+        // para evitar que GitHub Pages lo resuelva incorrectamente.
+        // serviceWorkerParam scope explícito para el subdirectorio.
+        // pageViews: 0 → el slidedown se muestra desde la primera visita
+        // y vuelve a mostrarse si el usuario lo cerró sin responder.
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
             await OneSignal.init({
                 appId: "b6abb876-1772-4c93-9fe4-876e3e4873ec",
-                serviceWorkerPath: "OneSignalSDK.sw.js",
+                serviceWorkerPath: "/Cumples-Familia/OneSignalSDK.sw.js",
+                serviceWorkerParam: { scope: "/Cumples-Familia/" },
                 notifyButton: { enable: false },
                 promptOptions: {
                     slidedown: {
@@ -320,11 +318,11 @@
                             type: "push",
                             autoPrompt: true,
                             text: {
-                                actionMessage: "¿Querés recibir avisos de cumpleaños a las 9 AM?",
+                                actionMessage: "¿Quieres recibir avisos de cumpleaños a las 9 AM?",
                                 acceptButton: "Sí, avisar",
                                 cancelButton: "Ahora no"
                             },
-                            delay: { pageViews: 1, timeDelay: 3 }
+                            delay: { pageViews: 0, timeDelay: 2 }
                         }]
                     }
                 }
