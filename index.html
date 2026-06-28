@@ -308,9 +308,11 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database().ref('cumpleanos');
 
-        // ── WEBPUSH NATIVO (reemplaza OneSignal) ──────────────────────
-        // Clave pública VAPID — la privada solo está en GitHub Secrets.
-        const VAPID_PUBLIC_KEY = 'BI_29gpjmYkQ0TYjdqB4jTesk7MdyWTizFPhRzPE3qQciFEjumbWKWxZE9tcly5MVDumxNVyuPogwEKND8lS-t0';
+        // ── WEBPUSH NATIVO ────────────────────────────────────────────
+        // Clave pública VAPID de Firebase Cloud Messaging.
+        // La clave privada correspondiente está en GitHub Secrets (CF_FIREBASE_SERVICE_ACCOUNT).
+        // El workflow usa FCM HTTP v1 con OAuth2 para enviar — mismo método que Oriente Fraterno.
+        const VAPID_PUBLIC_KEY = 'BFLo8Vr5wHMwLalvIsR16sIkjxc8-8kZo1T2js-jRUgx2FGOD4fflby08U6wanw1jQPYuCtxrzskm9QAVcZtv8Q';
         const APP_URL          = 'https://caristim.github.io/Cumples-Familia/';
         let swRegistration     = null;
 
@@ -380,11 +382,9 @@
                     scope: '/Cumples-Familia/'
                 });
                 console.log('[CF] SW registrado, scope:', swRegistration.scope);
-                // Activar notificaciones automáticamente si el permiso ya fue concedido
                 if (Notification.permission === 'granted') {
                     await registrarWebPush(swRegistration);
                 } else if (Notification.permission !== 'denied') {
-                    // Pedir permiso con un pequeño delay para no interrumpir la carga
                     setTimeout(() => activarNotificaciones(swRegistration), 2000);
                 }
             } catch (err) {
