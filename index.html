@@ -18,7 +18,7 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <!-- Sin OneSignal: usamos WebPush nativo con VAPID (funciona en Android, Edge e iOS 16.4+) -->
 </head>
 <body class="bg-gray-100 font-sans min-h-screen">
 
@@ -157,12 +157,21 @@
         </div>
     </div>
 
-    <!-- BANNER ONESIGNAL FALLA AL CARGAR -->
-    <div id="banner-onesignal-error" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-50 border-b border-red-200 shadow p-3">
+    <!-- BANNER NOTIFICACIONES: estado del registro WebPush -->
+    <div id="banner-notif-error" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-50 border-b border-red-200 shadow p-3">
         <div class="max-w-md mx-auto flex items-center gap-3">
             <span class="material-icons text-red-500 shrink-0">error_outline</span>
-            <p class="text-red-700 text-xs flex-1">No se pudo activar las notificaciones. Verificá tu conexión y recargá la página.</p>
-            <button onclick="document.getElementById('banner-onesignal-error').classList.add('hidden')" class="text-red-400 hover:text-red-600 shrink-0">
+            <p class="text-red-700 text-xs flex-1">No se pudo activar las notificaciones. Verifica tu conexión y recarga la página.</p>
+            <button onclick="document.getElementById('banner-notif-error').classList.add('hidden')" class="text-red-400 hover:text-red-600 shrink-0">
+                <span class="material-icons text-lg">close</span>
+            </button>
+        </div>
+    </div>
+    <div id="banner-notif-ok" class="hidden fixed top-0 left-0 right-0 z-50 bg-green-50 border-b border-green-200 shadow p-3">
+        <div class="max-w-md mx-auto flex items-center gap-3">
+            <span class="material-icons text-green-500 shrink-0">check_circle</span>
+            <p class="text-green-700 text-xs flex-1">¡Notificaciones activadas! Recibirás avisos de cumpleaños a las 9 AM.</p>
+            <button onclick="document.getElementById('banner-notif-ok').classList.add('hidden')" class="text-green-400 hover:text-green-600 shrink-0">
                 <span class="material-icons text-lg">close</span>
             </button>
         </div>
@@ -299,41 +308,93 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database().ref('cumpleanos');
 
-        // ── ONESIGNAL ──────────────────────────────────────────────────
-        // OneSignal v16 busca "OneSignalSDKWorker.js" (nombre hardcodeado).
-        // serviceWorkerPath apunta al archivo con el nombre correcto dentro
-        // del subdirectorio /Cumples-Familia/ de GitHub Pages.
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
-        OneSignalDeferred.push(async function(OneSignal) {
-            await OneSignal.init({
-                appId: "b6abb876-1772-4c93-9fe4-876e3e4873ec",
-                serviceWorkerPath: "/Cumples-Familia/OneSignalSDKWorker.js",
-                serviceWorkerParam: { scope: "/Cumples-Familia/" },
-                notifyButton: { enable: false },
-                promptOptions: {
-                    slidedown: {
-                        prompts: [{
-                            type: "push",
-                            autoPrompt: true,
-                            text: {
-                                actionMessage: "¿Quieres recibir avisos de cumpleaños a las 9 AM?",
-                                acceptButton: "Sí, avisar",
-                                cancelButton: "Ahora no"
-                            },
-                            delay: { pageViews: 0, timeDelay: 2 }
-                        }]
-                    }
-                }
-            });
+        // ── WEBPUSH NATIVO (reemplaza OneSignal) ──────────────────────
+        // Clave pública VAPID — la privada solo está en GitHub Secrets.
+        const VAPID_PUBLIC_KEY = 'BI_29gpjmYkQ0TYjdqB4jTesk7MdyWTizFPhRzPE3qQciFEjumbWKWxZE9tcly5MVDumxNVyuPogwEKND8lS-t0';
+        const APP_URL          = 'https://caristim.github.io/Cumples-Familia/';
+        let swRegistration     = null;
 
-            // Detectar si el usuario denegó los permisos en Android/Desktop
-            // y mostrar el banner de ayuda correspondiente
-            const permiso = await OneSignal.Notifications.permission;
-            if (!permiso && Notification.permission === 'denied') {
-                mostrarBannerPermisos();
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const raw     = atob(base64);
+            return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+        }
+
+        async function hashEndpoint(ep) {
+            const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(ep));
+            return 'wp_' + Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+        }
+
+        async function registrarWebPush(reg) {
+            try {
+                let sub = await reg.pushManager.getSubscription();
+                if (!sub) {
+                    sub = await reg.pushManager.subscribe({
+                        userVisibleOnly:      true,
+                        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+                    });
+                }
+                const j      = sub.toJSON();
+                const docKey = await hashEndpoint(j.endpoint);
+                await firebase.database().ref('webpush_subscriptions/' + docKey).set({
+                    endpoint:   j.endpoint,
+                    p256dh:     j.keys.p256dh,
+                    auth:       j.keys.auth,
+                    updatedAt:  new Date().toISOString(),
+                });
+                console.log('[CF] WebPush registrado OK');
+                document.getElementById('banner-notif-ok').classList.remove('hidden');
+                setTimeout(() => document.getElementById('banner-notif-ok').classList.add('hidden'), 5000);
+                return true;
+            } catch (err) {
+                console.warn('[CF] Error registrando WebPush:', err.message);
+                document.getElementById('banner-notif-error').classList.remove('hidden');
+                return false;
             }
-        });
-        // ── FIN ONESIGNAL ──────────────────────────────────────────────
+        }
+
+        async function activarNotificaciones(reg) {
+            if (!('Notification' in window) || !('PushManager' in window)) {
+                console.warn('[CF] Push no soportado en este navegador');
+                return false;
+            }
+            if (Notification.permission === 'denied') {
+                mostrarBannerPermisos();
+                return false;
+            }
+            if (Notification.permission !== 'granted') {
+                const perm = await Notification.requestPermission();
+                if (perm !== 'granted') {
+                    mostrarBannerPermisos();
+                    return false;
+                }
+            }
+            return registrarWebPush(reg);
+        }
+
+        async function iniciarSW() {
+            if (!('serviceWorker' in navigator)) return;
+            try {
+                swRegistration = await navigator.serviceWorker.register('./sw.js', {
+                    scope: '/Cumples-Familia/'
+                });
+                console.log('[CF] SW registrado, scope:', swRegistration.scope);
+                // Activar notificaciones automáticamente si el permiso ya fue concedido
+                if (Notification.permission === 'granted') {
+                    await registrarWebPush(swRegistration);
+                } else if (Notification.permission !== 'denied') {
+                    // Pedir permiso con un pequeño delay para no interrumpir la carga
+                    setTimeout(() => activarNotificaciones(swRegistration), 2000);
+                }
+            } catch (err) {
+                console.warn('[CF] Error registrando SW:', err.message);
+                document.getElementById('banner-notif-error').classList.remove('hidden');
+            }
+        }
+
+        iniciarSW();
+        // ── FIN WEBPUSH ───────────────────────────────────────────────
 
         // ── BANNER iOS ─────────────────────────────────────────────────
         function detectarBannerIOS() {
@@ -583,16 +644,6 @@
         window.abrirGuia = abrirGuia;
         window.cerrarGuia = cerrarGuia;
         window.mostrarTab = mostrarTab;
-
-        // ── DETECTOR DE ERROR DE ONESIGNAL ───────────────────────────────────
-        // Si el SDK de OneSignal no carga (CDN caído, sin conexión, etc.)
-        // en 8 segundos, mostramos el banner de error para que el usuario sepa
-        // que sus notificaciones no están activas.
-        setTimeout(() => {
-            if (typeof OneSignal === 'undefined' || !OneSignal.initialized) {
-                document.getElementById('banner-onesignal-error').classList.remove('hidden');
-            }
-        }, 8000);
 
         comprobarAcceso();
     </script>
