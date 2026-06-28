@@ -3,9 +3,8 @@ name: Notificacion Cumpleanos 9AM Uruguay
 on:
   schedule:
     # 12:00 UTC = 09:00 AM Uruguay (UTC-3 permanente desde 2015)
-    # Se agrega un segundo disparo a las 12:15 UTC como seguro ante retrasos
-    # de GitHub Actions. El script evita duplicados escribiendo un flag en
-    # Firebase con la fecha del día en que ya se envió la notificación.
+    # Segundo disparo a las 12:15 UTC como respaldo ante retrasos de GitHub Actions.
+    # El script evita duplicados con un flag en Firebase Realtime Database.
     - cron: '0 12 * * *'
     - cron: '15 12 * * *'
   workflow_dispatch:
@@ -15,60 +14,72 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Instalar dependencias
+        run: npm install web-push
+
       - name: Verificar cumpleaños y enviar notificación
         env:
-          FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
-          ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
-          ONESIGNAL_API_KEY: ${{ secrets.ONESIGNAL_API_KEY }}
+          FIREBASE_DB_URL:    ${{ secrets.FIREBASE_DB_URL }}
+          VAPID_PUBLIC_KEY:   ${{ secrets.CF_VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY:  ${{ secrets.CF_VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT:      ${{ secrets.CF_VAPID_SUBJECT }}
 
         run: |
-          cat > /tmp/check_cumples.js << 'JSEOF'
-          const https = require('https');
+          node << 'EOF'
+          'use strict';
+          const https   = require('https');
+          const webpush = require('web-push');
 
-          function salirError(msg) {
-            console.error('ERROR:', msg);
-            process.exit(1);
-          }
+          function salirError(msg) { console.error('ERROR:', msg); process.exit(1); }
 
           if (!process.env.FIREBASE_DB_URL)   salirError('Falta FIREBASE_DB_URL');
-          if (!process.env.ONESIGNAL_APP_ID)  salirError('Falta ONESIGNAL_APP_ID');
-          if (!process.env.ONESIGNAL_API_KEY) salirError('Falta ONESIGNAL_API_KEY');
+          if (!process.env.VAPID_PUBLIC_KEY)  salirError('Falta CF_VAPID_PUBLIC_KEY');
+          if (!process.env.VAPID_PRIVATE_KEY) salirError('Falta CF_VAPID_PRIVATE_KEY');
+          if (!process.env.VAPID_SUBJECT)     salirError('Falta CF_VAPID_SUBJECT');
+
+          webpush.setVapidDetails(
+            process.env.VAPID_SUBJECT,
+            process.env.VAPID_PUBLIC_KEY,
+            process.env.VAPID_PRIVATE_KEY
+          );
 
           // Uruguay es UTC-3 permanente (abolió el horario de verano en 2015)
-          const ahora = new Date();
-          const hoyUY = new Date(ahora.getTime() - 3 * 60 * 60 * 1000);
-          const DIA_HOY  = hoyUY.getUTCDate();
-          const MES_HOY  = hoyUY.getUTCMonth() + 1;
-          const ANIO_HOY = hoyUY.getUTCFullYear();
-          const HORA_UY  = hoyUY.getUTCHours();
+          const ahora   = new Date();
+          const uyStr   = ahora.toLocaleString('en-US', { timeZone: 'America/Montevideo' });
+          const uyDate  = new Date(uyStr);
+          const DIA_HOY  = uyDate.getDate();
+          const MES_HOY  = uyDate.getMonth() + 1;
+          const ANIO_HOY = uyDate.getFullYear();
+          const HORA_UY  = uyDate.getHours();
 
-          // Clave de deduplicación: AAAA-MM-DD
           const FECHA_HOY_STR = ANIO_HOY + '-' + String(MES_HOY).padStart(2,'0') + '-' + String(DIA_HOY).padStart(2,'0');
+          const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, '');
 
           console.log('=== Cumples Familia - Verificación diaria ===');
           console.log('Timestamp UTC   :', ahora.toISOString());
-          console.log('Fecha Uruguay   :', DIA_HOY + '/' + MES_HOY + '/' + ANIO_HOY + ' ' + HORA_UY + ':' + String(hoyUY.getUTCMinutes()).padStart(2,'0') + ' UY');
+          console.log('Fecha Uruguay   :', DIA_HOY + '/' + MES_HOY + '/' + ANIO_HOY + ' ' + HORA_UY + ':' + String(uyDate.getMinutes()).padStart(2,'0') + ' UY');
 
           // Guardia de hora: solo ejecutar entre las 08:00 y las 11:59 hora Uruguay.
-          // Ventana amplia para absorber retrasos de GitHub Actions (a veces >1h).
-          // Para workflow_dispatch manual se omite la guardia horaria para que
-          // el administrador pueda probar en cualquier momento.
           if (process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch' && (HORA_UY < 8 || HORA_UY > 11)) {
-            console.log('Hora Uruguay actual: ' + HORA_UY + 'h. Fuera de la ventana 08:00-11:59. Saliendo sin enviar.');
+            console.log('Hora Uruguay: ' + HORA_UY + 'h. Fuera de la ventana 08:00-11:59. Saliendo.');
             process.exit(0);
           }
 
-          const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, '');
+          function httpGet(url) {
+            return new Promise((resolve, reject) => {
+              https.get(url, res => {
+                let body = '';
+                res.on('data', c => body += c);
+                res.on('end', () => resolve({ status: res.statusCode, body }));
+              }).on('error', reject);
+            });
+          }
 
-          // ── DEDUPLICACIÓN REAL: verificar flag en Firebase ──────────────
-          // Se usa la ruta /notificaciones_enviadas/<FECHA> para registrar
-          // si hoy ya se envió la notificación. Así, el segundo cron nunca
-          // enviará una duplicada aunque el primero ya haya funcionado.
           function httpRequest(opts, postBody) {
             return new Promise((resolve, reject) => {
-              const req = https.request(opts, (res) => {
+              const req = https.request(opts, res => {
                 let body = '';
-                res.on('data', c => { body += c; });
+                res.on('data', c => body += c);
                 res.on('end', () => resolve({ status: res.statusCode, body }));
               });
               req.on('error', reject);
@@ -77,53 +88,34 @@ jobs:
             });
           }
 
-          function httpGet(url) {
-            return new Promise((resolve, reject) => {
-              https.get(url, (res) => {
-                let body = '';
-                res.on('data', c => { body += c; });
-                res.on('end', () => resolve({ status: res.statusCode, body }));
-              }).on('error', reject);
-            });
-          }
-
           async function main() {
-            // 1. Verificar si hoy ya se envió la notificación
+            // 1. Verificar flag de deduplicación
             const flagUrl = baseUrl + '/notificaciones_enviadas/' + FECHA_HOY_STR + '.json';
             console.log('Verificando flag de deduplicación:', FECHA_HOY_STR);
-
             let flagResp;
             try { flagResp = await httpGet(flagUrl); }
-            catch(e) { salirError('Error de red al leer flag en Firebase: ' + e.message); }
-
-            if (flagResp.status < 200 || flagResp.status >= 300) {
-              salirError('Firebase flag HTTP ' + flagResp.status + ': ' + flagResp.body.slice(0,200));
-            }
-
+            catch(e) { salirError('Error de red al leer flag: ' + e.message); }
+            if (flagResp.status < 200 || flagResp.status >= 300)
+              salirError('Firebase flag HTTP ' + flagResp.status);
             const flagVal = JSON.parse(flagResp.body);
             if (flagVal !== null && flagVal !== false) {
-              console.log('Notificación de hoy ya enviada anteriormente (flag=' + JSON.stringify(flagVal) + '). Saliendo sin duplicar.');
+              console.log('Notificación de hoy ya enviada (flag=' + JSON.stringify(flagVal) + '). Saliendo.');
               process.exit(0);
             }
 
-            // 2. Leer cumpleaños del día desde Firebase
+            // 2. Leer cumpleaños
             const firebaseUrl = baseUrl + '/cumpleanos.json';
-            console.log('Consultando Firebase:', firebaseUrl.replace(/\/\/.*?@/, '//***@'));
-
+            console.log('Consultando Firebase:', firebaseUrl.replace(/\/\/.*?\./, '//***.'));
             let dataResp;
             try { dataResp = await httpGet(firebaseUrl); }
-            catch(e) { salirError('Error de red al conectar con Firebase: ' + e.message); }
-
-            if (dataResp.status < 200 || dataResp.status >= 300) {
-              salirError('Firebase HTTP ' + dataResp.status + ': ' + dataResp.body.slice(0,200));
-            }
-
+            catch(e) { salirError('Error de red con Firebase: ' + e.message); }
+            if (dataResp.status < 200 || dataResp.status >= 300)
+              salirError('Firebase HTTP ' + dataResp.status);
             let datos;
             try { datos = JSON.parse(dataResp.body); }
             catch(e) { salirError('JSON inválido desde Firebase: ' + e.message); }
-
             if (!datos || typeof datos !== 'object' || Object.keys(datos).length === 0) {
-              console.log('Sin cumpleaños registrados en Firebase. Fin.');
+              console.log('Sin cumpleaños registrados. Fin.');
               process.exit(0);
             }
 
@@ -139,13 +131,11 @@ jobs:
               process.exit(0);
             }
 
-            console.log('Cumpleaños hoy:', hoy.length);
-
             const nombres = hoy.map(c => {
               if (!c.anio) return c.nombre;
               let edad = ANIO_HOY - parseInt(c.anio);
-              const cumpEsteAnio = new Date(Date.UTC(ANIO_HOY, parseInt(c.mes) - 1, parseInt(c.dia)));
-              if (cumpEsteAnio > hoyUY) edad--;
+              const cumpEsteAnio = new Date(ANIO_HOY, parseInt(c.mes) - 1, parseInt(c.dia));
+              if (cumpEsteAnio > uyDate) edad--;
               return c.nombre + ' (' + edad + ' años)';
             });
 
@@ -155,73 +145,102 @@ jobs:
             const cuerpo = hoy.length === 1
               ? 'No te olvides de saludar a ' + nombres[0] + ' 🎉'
               : 'Cumpleaños de hoy: ' + nombres.join(' y ') + ' 🎉';
+            const tag = 'cf-cumple-' + FECHA_HOY_STR;
 
             console.log('Título :', titulo);
             console.log('Cuerpo :', cuerpo);
-            console.log('Enviando notificación a OneSignal...');
 
-            // 3. Enviar notificación a OneSignal
+            // 3. Leer suscripciones WebPush de Firebase Realtime Database
+            const subsUrl = baseUrl + '/webpush_subscriptions.json';
+            console.log('\nLeyendo suscripciones WebPush...');
+            let subsResp;
+            try { subsResp = await httpGet(subsUrl); }
+            catch(e) { salirError('Error de red al leer suscripciones: ' + e.message); }
+
+            let subsData = null;
+            if (subsResp.status >= 200 && subsResp.status < 300) {
+              try { subsData = JSON.parse(subsResp.body); } catch(_) {}
+            }
+
+            const suscripciones = subsData && typeof subsData === 'object'
+              ? Object.entries(subsData).filter(([, v]) => v && v.endpoint && v.p256dh && v.auth)
+              : [];
+
+            console.log('Suscripciones WebPush registradas:', suscripciones.length);
+
+            if (suscripciones.length === 0) {
+              console.log('No hay suscriptores. Fin.');
+              process.exit(0);
+            }
+
+            // 4. Enviar WebPush a cada suscriptor
             const payload = JSON.stringify({
-              app_id: process.env.ONESIGNAL_APP_ID,
-              included_segments: ['Total Subscriptions'],
-              headings: { es: titulo, en: titulo },
-              contents: { es: cuerpo,  en: cuerpo  }
+              title: titulo,
+              body:  cuerpo,
+              url:   'https://caristim.github.io/Cumples-Familia/',
+              tag,
             });
 
-            const urlObj = new URL('https://onesignal.com/api/v1/notifications');
-            const osOpts = {
-              hostname: urlObj.hostname,
-              port: 443,
-              path: urlObj.pathname,
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Basic ' + process.env.ONESIGNAL_API_KEY,
-                'Content-Length': Buffer.byteLength(payload)
+            const invalidos = [];
+            let enviados = 0;
+
+            for (const [docKey, sub] of suscripciones) {
+              const subscription = {
+                endpoint: sub.endpoint,
+                keys:     { p256dh: sub.p256dh, auth: sub.auth },
+              };
+              try {
+                await webpush.sendNotification(subscription, payload, {
+                  TTL:     86400,
+                  urgency: 'high',
+                });
+                console.log('  WebPush OK:', sub.endpoint.substring(0, 60) + '...');
+                enviados++;
+              } catch (err) {
+                const invalido = err.statusCode === 404 || err.statusCode === 410;
+                console.log('  WebPush [' + (err.statusCode || err.message) + ']:', sub.endpoint.substring(0, 50) + '... →', invalido ? 'inválido' : 'error temporal');
+                if (invalido) invalidos.push(docKey);
               }
-            };
-
-            let osResp;
-            try { osResp = await httpRequest(osOpts, payload); }
-            catch(e) { salirError('Error de red al conectar con OneSignal: ' + e.message); }
-
-            console.log('OneSignal HTTP status:', osResp.status);
-            console.log('OneSignal response   :', osResp.body);
-
-            if (osResp.status < 200 || osResp.status >= 300) {
-              salirError('OneSignal respondió con error HTTP ' + osResp.status);
             }
 
-            // 4. Escribir flag de deduplicación en Firebase
-            // Usamos PUT (no PATCH) para crear/sobreescribir el nodo con la hora de envío.
-            const flagBody = JSON.stringify(ahora.toISOString());
-            const flagUrlObj = new URL(flagUrl);
-            const putOpts = {
-              hostname: flagUrlObj.hostname,
-              port: 443,
-              path: flagUrlObj.pathname + flagUrlObj.search,
-              method: 'PUT',
-              headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(flagBody)
+            // 5. Limpiar suscripciones inválidas
+            if (invalidos.length > 0) {
+              console.log('\nLimpiando', invalidos.length, 'suscripción(es) inválida(s)...');
+              for (const docKey of invalidos) {
+                const delUrl  = new URL(baseUrl + '/webpush_subscriptions/' + docKey + '.json');
+                const delOpts = {
+                  hostname: delUrl.hostname,
+                  path:     delUrl.pathname + delUrl.search,
+                  method:   'DELETE',
+                };
+                try {
+                  await httpRequest(delOpts, null);
+                  console.log('  Eliminado:', docKey);
+                } catch(e) { console.warn('  Error eliminando:', e.message); }
               }
-            };
+            }
 
+            // 6. Escribir flag de deduplicación
+            const flagBody   = JSON.stringify(ahora.toISOString());
+            const flagUrlObj = new URL(flagUrl);
+            const putOpts    = {
+              hostname: flagUrlObj.hostname,
+              path:     flagUrlObj.pathname + flagUrlObj.search,
+              method:   'PUT',
+              headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(flagBody) },
+            };
             try {
               const putResp = await httpRequest(putOpts, flagBody);
-              if (putResp.status >= 200 && putResp.status < 300) {
-                console.log('Flag de deduplicación guardado en Firebase para', FECHA_HOY_STR);
-              } else {
-                // No es fatal: la notificación ya se envió. Solo advertir.
-                console.warn('ADVERTENCIA: no se pudo guardar el flag de deduplicación. HTTP', putResp.status);
-              }
-            } catch(e) {
-              console.warn('ADVERTENCIA: error de red al guardar flag:', e.message);
-            }
+              if (putResp.status >= 200 && putResp.status < 300)
+                console.log('\nFlag de deduplicación guardado para', FECHA_HOY_STR);
+              else
+                console.warn('ADVERTENCIA: no se pudo guardar el flag. HTTP', putResp.status);
+            } catch(e) { console.warn('ADVERTENCIA: error guardando flag:', e.message); }
 
-            console.log('=== Notificación enviada correctamente ===');
+            console.log('\n=== Proceso completado ===');
+            console.log('  WebPush enviados:  ', enviados, '/', suscripciones.length);
+            console.log('  Inválidos eliminados:', invalidos.length);
           }
 
           main().catch(e => salirError(String(e)));
-          JSEOF
-          node /tmp/check_cumples.js
+          EOF
