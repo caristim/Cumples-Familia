@@ -226,6 +226,16 @@
             </h1>
             <p class="text-blue-100 text-xs mt-1">¡Nunca más te olvides de saludar!</p>
         </header>
+
+        <!-- BOTÓN PARA ACTIVAR NOTIFICACIONES (se muestra solo si no están activas) -->
+        <div id="activar-notificaciones-container" class="mb-4 hidden">
+            <button onclick="activarNotificacionesManual()" 
+                    class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2">
+                <span class="material-icons">notifications_active</span> Activar notificaciones
+            </button>
+            <p class="text-xs text-gray-400 mt-1 text-center">Toca aquí para recibir avisos de cumpleaños a las 9 AM</p>
+        </div>
+
         <!-- PANEL DE HOY -->
         <div id="panel-hoy" class="mb-6"></div>
 
@@ -312,6 +322,7 @@
         const VAPID_PUBLIC_KEY = 'BFLo8Vr5wHMwLalvIsR16sIkjxc8-8kZo1T2js-jRUgx2FGOD4fflby08U6wanw1jQPYuCtxrzskm9QAVcZtv8Q';
         const APP_URL          = 'https://caristim.github.io/Cumples-Familia/';
         let swRegistration     = null;
+        let notificacionesActivas = false; // bandera para ocultar/mostrar botón
 
         function urlBase64ToUint8Array(base64String) {
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -343,17 +354,23 @@
                     updatedAt:  new Date().toISOString(),
                 });
                 console.log('[CF] WebPush registrado OK');
+                // Mostrar banner verde
                 document.getElementById('banner-notif-ok').classList.remove('hidden');
                 setTimeout(() => document.getElementById('banner-notif-ok').classList.add('hidden'), 5000);
+                // Ocultar botón de activar
+                document.getElementById('activar-notificaciones-container').classList.add('hidden');
+                notificacionesActivas = true;
                 return true;
             } catch (err) {
                 console.warn('[CF] Error registrando WebPush:', err.message);
                 const banner = document.getElementById('banner-notif-error');
                 const mensaje = banner.querySelector('p');
-                if (err.message.includes('permission')) {
+                if (err.message.includes('permission') || err.message.includes('Permission')) {
                     mensaje.textContent = 'Permiso de notificaciones denegado. Habilítalo en la configuración del navegador.';
                 } else if (err.message.includes('network')) {
                     mensaje.textContent = 'Error de red al guardar la suscripción. Verifica tu conexión.';
+                } else if (err.message.includes('incognito')) {
+                    mensaje.textContent = 'Las notificaciones no funcionan en modo incógnito. Abre la app en una ventana normal.';
                 } else {
                     mensaje.textContent = 'No se pudo activar las notificaciones. Error: ' + err.message;
                 }
@@ -362,23 +379,46 @@
             }
         }
 
-        async function activarNotificaciones(reg) {
-            if (!('Notification' in window) || !('PushManager' in window)) {
-                console.warn('[CF] Push no soportado en este navegador');
-                return false;
+        async function activarNotificacionesManual() {
+            // Esta función se llama desde el botón "Activar notificaciones"
+            if (!swRegistration) {
+                console.warn('[CF] SW no disponible, intentando registrar...');
+                await iniciarSW();
+                if (!swRegistration) {
+                    mostrarBannerError('El servicio de notificaciones no está disponible. Recarga la página.');
+                    return false;
+                }
             }
-            if (Notification.permission === 'denied') {
+            if (Notification.permission === 'granted') {
+                // Ya tenemos permiso, registrar si no hay suscripción
+                const sub = await swRegistration.pushManager.getSubscription();
+                if (!sub) {
+                    return await registrarWebPush(swRegistration);
+                } else {
+                    // Ya está registrado, ocultar botón
+                    document.getElementById('activar-notificaciones-container').classList.add('hidden');
+                    notificacionesActivas = true;
+                    return true;
+                }
+            } else if (Notification.permission === 'denied') {
                 mostrarBannerPermisos();
                 return false;
-            }
-            if (Notification.permission !== 'granted') {
+            } else {
+                // Permiso no decidido: lo pedimos ahora (gesto del usuario)
                 const perm = await Notification.requestPermission();
-                if (perm !== 'granted') {
+                if (perm === 'granted') {
+                    return await registrarWebPush(swRegistration);
+                } else {
                     mostrarBannerPermisos();
                     return false;
                 }
             }
-            return registrarWebPush(reg);
+        }
+
+        function mostrarBannerError(mensaje) {
+            const banner = document.getElementById('banner-notif-error');
+            banner.querySelector('p').textContent = mensaje;
+            banner.classList.remove('hidden');
         }
 
         async function iniciarSW() {
@@ -388,41 +428,23 @@
                     scope: '/Cumples-Familia/'
                 });
                 console.log('[CF] SW registrado, scope:', swRegistration.scope);
-                if (Notification.permission === 'granted') {
-                    await registrarWebPush(swRegistration);
-                } else if (Notification.permission !== 'denied') {
-                    console.log('[CF] Esperando interacción del usuario para solicitar notificaciones');
+                // Comprobar si ya hay suscripción activa
+                if (swRegistration) {
+                    const sub = await swRegistration.pushManager.getSubscription();
+                    if (sub) {
+                        // Ya hay suscripción, ocultar botón
+                        document.getElementById('activar-notificaciones-container').classList.add('hidden');
+                        notificacionesActivas = true;
+                    } else {
+                        // No hay suscripción, mostrar botón si el permiso no está denegado
+                        if (Notification.permission !== 'denied') {
+                            document.getElementById('activar-notificaciones-container').classList.remove('hidden');
+                        }
+                    }
                 }
             } catch (err) {
                 console.warn('[CF] Error registrando SW:', err.message);
                 document.getElementById('banner-notif-error').classList.remove('hidden');
-            }
-        }
-
-        // ── FORZAR REGISTRO EN EL CLIC DEL BOTÓN "AGREGAR" ──
-        async function intentarRegistroWebPush() {
-            if (!swRegistration) {
-                console.warn('[CF] SW no disponible, reintentando...');
-                await iniciarSW();
-                if (!swRegistration) return false;
-            }
-            if (Notification.permission === 'granted') {
-                const sub = await swRegistration.pushManager.getSubscription();
-                if (!sub) {
-                    return await registrarWebPush(swRegistration);
-                }
-                return true;
-            } else if (Notification.permission === 'denied') {
-                mostrarBannerPermisos();
-                return false;
-            } else {
-                const perm = await Notification.requestPermission();
-                if (perm === 'granted') {
-                    return await registrarWebPush(swRegistration);
-                } else {
-                    mostrarBannerPermisos();
-                    return false;
-                }
             }
         }
 
@@ -483,9 +505,7 @@
 
         // ── MODAL ──────────────────────────────────────────────────────
         function abrirModalNuevo() {
-            intentarRegistroWebPush().then(ok => {
-                console.log('[CF] Registro tras clic:', ok ? 'éxito' : 'fallo');
-            });
+            // Ya no contiene lógica de notificaciones
             document.getElementById('modal-titulo').textContent = 'Nuevo Cumpleaños';
             document.getElementById('cumple-form').reset();
             document.getElementById('edit-id').value = '';
