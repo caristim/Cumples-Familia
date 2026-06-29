@@ -1,9 +1,9 @@
-// Cumples Familia — Service Worker v2.0
+// Cumples Familia — Service Worker v2.1
 // WebPush nativo (sin OneSignal, sin Firebase SDK)
 
-const SW_VERSION    = 'cf-sw-v2.0';
+const SW_VERSION    = 'cf-sw-v2.1';
 const APP_ROOT      = 'https://caristim.github.io/Cumples-Familia/';
-const CACHE_NAME    = 'cf-cache-v2.0';
+const CACHE_NAME    = 'cf-cache-v2.1';
 const ICON_URL      = 'https://caristim.github.io/Cumples-Familia/icon-192.png';
 
 const PRECACHE_URLS = [
@@ -91,8 +91,15 @@ self.addEventListener('fetch', e => {
     caches.match(e.request).then(cached => {
       if (cached) return cached;
       return fetch(e.request).then(res => {
+        // Clonar solo si la respuesta es válida y clonable
         if (res && res.status === 200) {
-          caches.open(CACHE_NAME).then(c => c.put(e.request, res.clone()));
+          try {
+            const cloned = res.clone();
+            caches.open(CACHE_NAME).then(c => c.put(e.request, cloned));
+          } catch (cloneError) {
+            // Si el clone falla, ignoramos el cacheo (la respuesta ya se usó)
+            console.warn('[CF-SW] No se pudo clonar la respuesta para cachear:', cloneError);
+          }
         }
         return res;
       }).catch(() =>
