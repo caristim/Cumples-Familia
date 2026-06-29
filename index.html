@@ -309,9 +309,6 @@
         const db = firebase.database().ref('cumpleanos');
 
         // ── WEBPUSH NATIVO ────────────────────────────────────────────
-        // Clave pública VAPID de Firebase Cloud Messaging.
-        // La clave privada correspondiente está en GitHub Secrets (CF_FIREBASE_SERVICE_ACCOUNT).
-        // El workflow usa FCM HTTP v1 con OAuth2 para enviar — mismo método que Oriente Fraterno.
         const VAPID_PUBLIC_KEY = 'BFLo8Vr5wHMwLalvIsR16sIkjxc8-8kZo1T2js-jRUgx2FGOD4fflby08U6wanw1jQPYuCtxrzskm9QAVcZtv8Q';
         const APP_URL          = 'https://caristim.github.io/Cumples-Familia/';
         let swRegistration     = null;
@@ -351,7 +348,16 @@
                 return true;
             } catch (err) {
                 console.warn('[CF] Error registrando WebPush:', err.message);
-                document.getElementById('banner-notif-error').classList.remove('hidden');
+                const banner = document.getElementById('banner-notif-error');
+                const mensaje = banner.querySelector('p');
+                if (err.message.includes('permission')) {
+                    mensaje.textContent = 'Permiso de notificaciones denegado. Habilítalo en la configuración del navegador.';
+                } else if (err.message.includes('network')) {
+                    mensaje.textContent = 'Error de red al guardar la suscripción. Verifica tu conexión.';
+                } else {
+                    mensaje.textContent = 'No se pudo activar las notificaciones. Error: ' + err.message;
+                }
+                banner.classList.remove('hidden');
                 return false;
             }
         }
@@ -385,7 +391,7 @@
                 if (Notification.permission === 'granted') {
                     await registrarWebPush(swRegistration);
                 } else if (Notification.permission !== 'denied') {
-                    setTimeout(() => activarNotificaciones(swRegistration), 2000);
+                    console.log('[CF] Esperando interacción del usuario para solicitar notificaciones');
                 }
             } catch (err) {
                 console.warn('[CF] Error registrando SW:', err.message);
@@ -393,7 +399,33 @@
             }
         }
 
-        iniciarSW();
+        // ── FORZAR REGISTRO EN EL CLIC DEL BOTÓN "AGREGAR" ──
+        async function intentarRegistroWebPush() {
+            if (!swRegistration) {
+                console.warn('[CF] SW no disponible, reintentando...');
+                await iniciarSW();
+                if (!swRegistration) return false;
+            }
+            if (Notification.permission === 'granted') {
+                const sub = await swRegistration.pushManager.getSubscription();
+                if (!sub) {
+                    return await registrarWebPush(swRegistration);
+                }
+                return true;
+            } else if (Notification.permission === 'denied') {
+                mostrarBannerPermisos();
+                return false;
+            } else {
+                const perm = await Notification.requestPermission();
+                if (perm === 'granted') {
+                    return await registrarWebPush(swRegistration);
+                } else {
+                    mostrarBannerPermisos();
+                    return false;
+                }
+            }
+        }
+
         // ── FIN WEBPUSH ───────────────────────────────────────────────
 
         // ── BANNER iOS ─────────────────────────────────────────────────
@@ -451,6 +483,9 @@
 
         // ── MODAL ──────────────────────────────────────────────────────
         function abrirModalNuevo() {
+            intentarRegistroWebPush().then(ok => {
+                console.log('[CF] Registro tras clic:', ok ? 'éxito' : 'fallo');
+            });
             document.getElementById('modal-titulo').textContent = 'Nuevo Cumpleaños';
             document.getElementById('cumple-form').reset();
             document.getElementById('edit-id').value = '';
@@ -474,6 +509,7 @@
         // ── APP ────────────────────────────────────────────────────────
         function inicializarApp() {
             escucharBaseDatos();
+            iniciarSW();
         }
 
         function escucharBaseDatos() {
