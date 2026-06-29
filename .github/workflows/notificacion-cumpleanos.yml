@@ -171,7 +171,13 @@ jobs:
                 enviados++;
               } catch (err) {
                 const invalido = err.statusCode === 404 || err.statusCode === 410;
-                console.log('  WebPush [' + (err.statusCode || err.message) + ']:', sub.endpoint.substring(0, 50) + '... →', invalido ? 'suscripción inválida' : 'error temporal');
+                console.log('  WebPush ERROR ---');
+                console.log('    statusCode :', err.statusCode);
+                console.log('    endpoint   :', sub.endpoint.substring(0, 80) + '...');
+                console.log('    body       :', err.body || '(vacío)');
+                console.log('    headers    :', JSON.stringify(err.headers || {}));
+                console.log('    message    :', err.message || '(sin mensaje)');
+                console.log('  ---');
                 if (invalido) invalidos.push(docKey);
               }
             }
