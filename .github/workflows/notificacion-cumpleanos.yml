@@ -16,10 +16,11 @@ jobs:
 
       - name: Verificar cumpleaños y enviar notificación
         env:
-          FIREBASE_DB_URL:    ${{ secrets.FIREBASE_DB_URL }}
+          FIREBASE_DB_URL:      ${{ secrets.FIREBASE_DB_URL }}
           CF_VAPID_PUBLIC_KEY:  ${{ secrets.CF_VAPID_PUBLIC_KEY }}
           CF_VAPID_PRIVATE_KEY: ${{ secrets.CF_VAPID_PRIVATE_KEY }}
           CF_VAPID_SUBJECT:     ${{ secrets.CF_VAPID_SUBJECT }}
+          GH_EVENT_NAME:        ${{ github.event_name }}
 
         run: |
           node << 'EOF'
@@ -40,6 +41,8 @@ jobs:
             process.env.CF_VAPID_PRIVATE_KEY
           );
 
+          const ES_MANUAL = process.env.GH_EVENT_NAME === 'workflow_dispatch';
+
           const ahora   = new Date();
           const uyStr   = ahora.toLocaleString('en-US', { timeZone: 'America/Montevideo' });
           const uyDate  = new Date(uyStr);
@@ -51,12 +54,17 @@ jobs:
           const baseUrl = process.env.FIREBASE_DB_URL.replace(/\/$/, '');
 
           console.log('=== Cumples Familia - Verificación diaria ===');
+          console.log('Modo            :', ES_MANUAL ? 'MANUAL (workflow_dispatch)' : 'automático (cron)');
           console.log('Timestamp UTC   :', ahora.toISOString());
           console.log('Fecha Uruguay   :', DIA_HOY + '/' + MES_HOY + '/' + ANIO_HOY + ' ' + HORA_UY + ':' + String(uyDate.getMinutes()).padStart(2,'0') + ' UY');
 
-          if (process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch' && (HORA_UY < 8 || HORA_UY > 11)) {
+          if (!ES_MANUAL && (HORA_UY < 8 || HORA_UY > 11)) {
             console.log('Fuera de la ventana 08:00-11:59 UY. Saliendo.');
             process.exit(0);
+          }
+
+          if (ES_MANUAL) {
+            console.log('>> Ejecución manual: se omite la ventana horaria y el flag de deduplicación.');
           }
 
           function httpGet(url) {
@@ -83,20 +91,22 @@ jobs:
           }
 
           async function main() {
-            // 1. Flag de deduplicación
-            const flagUrl  = baseUrl + '/notificaciones_enviadas/' + FECHA_HOY_STR + '.json';
-            console.log('Verificando flag de deduplicación:', FECHA_HOY_STR);
-            const flagResp = await httpGet(flagUrl).catch(e => salirError('Red flag: ' + e.message));
-            if (flagResp.status < 200 || flagResp.status >= 300) salirError('Firebase flag HTTP ' + flagResp.status);
-            const flagVal  = JSON.parse(flagResp.body);
-            if (flagVal !== null && flagVal !== false) {
-              console.log('Notificación de hoy ya enviada. Saliendo.');
-              process.exit(0);
+            // 1. Flag de deduplicación (solo en modo automático)
+            if (!ES_MANUAL) {
+              const flagUrl  = baseUrl + '/notificaciones_enviadas/' + FECHA_HOY_STR + '.json';
+              console.log('Verificando flag de deduplicación:', FECHA_HOY_STR);
+              const flagResp = await httpGet(flagUrl).catch(e => salirError('Red flag: ' + e.message));
+              if (flagResp.status < 200 || flagResp.status >= 300) salirError('Firebase flag HTTP ' + flagResp.status);
+              const flagVal  = JSON.parse(flagResp.body);
+              if (flagVal !== null && flagVal !== false) {
+                console.log('Notificación de hoy ya enviada. Saliendo.');
+                process.exit(0);
+              }
             }
 
             // 2. Leer cumpleaños
             const firebaseUrl = baseUrl + '/cumpleanos.json';
-            console.log('Consultando Firebase:', firebaseUrl.replace(/\/\/.*?\./, '//***.'));
+            console.log('Consultando Firebase:', firebaseUrl.replace(/\/\/.*?\./, '//***.' ));
             const dataResp = await httpGet(firebaseUrl).catch(e => salirError('Red Firebase: ' + e.message));
             if (dataResp.status < 200 || dataResp.status >= 300) salirError('Firebase HTTP ' + dataResp.status);
             let datos;
@@ -180,16 +190,19 @@ jobs:
               }
             }
 
-            // 6. Guardar flag de deduplicación
-            const flagBody   = JSON.stringify(ahora.toISOString());
-            const flagUrlObj = new URL(flagUrl);
-            await httpRequest({
-              hostname: flagUrlObj.hostname,
-              path:     flagUrlObj.pathname,
-              method:   'PUT',
-              headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(flagBody) },
-            }, flagBody).catch(e => console.warn('ADVERTENCIA flag:', e.message));
-            console.log('\nFlag de deduplicación guardado para', FECHA_HOY_STR);
+            // 6. Guardar flag de deduplicación (solo en modo automático)
+            if (!ES_MANUAL) {
+              const flagUrl    = baseUrl + '/notificaciones_enviadas/' + FECHA_HOY_STR + '.json';
+              const flagBody   = JSON.stringify(ahora.toISOString());
+              const flagUrlObj = new URL(flagUrl);
+              await httpRequest({
+                hostname: flagUrlObj.hostname,
+                path:     flagUrlObj.pathname,
+                method:   'PUT',
+                headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(flagBody) },
+              }, flagBody).catch(e => console.warn('ADVERTENCIA flag:', e.message));
+              console.log('\nFlag de deduplicación guardado para', FECHA_HOY_STR);
+            }
 
             console.log('\n=== Proceso completado ===');
             console.log('  WebPush enviados:    ', enviados, '/', suscripciones.length);
